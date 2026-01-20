@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grok Voice AI Companion</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23667eea'/></svg>">
+    <link rel="stylesheet" href="/static/css/style.css">
+    
+    <!-- Cubism SDK for Live2D (required) -->
+    <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+    
+    <!-- PixiJS and Live2D -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.0/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Live2D Canvas Container -->
+        <div id="canvas-container">
+            <canvas id="live2d-canvas"></canvas>
+        </div>
+
+        <!-- Model Selector -->
+        <div id="model-selector" class="panel">
+            <label>Select Avatar</label>
+            <select id="model-dropdown">
+                <option value="/static/models/kei_vowels_pro/runtime/kei_vowels_pro.model3.json">Kei Vowels Pro</option>
+            </select>
+            <button id="load-custom-btn" class="secondary-btn">📁 Load Custom</button>
+            <input type="file" id="custom-model-input" accept=".model3.json" style="display: none;">
+        </div>
+
+        <!-- Transcript Panel -->
+        <div id="transcript-panel" class="panel hidden">
+            <div id="transcript-content"></div>
+        </div>
+
+        <!-- Controls Panel -->
+        <div id="controls-panel" class="panel">
+            <div id="status-indicator">
+                <div id="status-dot" class="disconnected"></div>
+                <span id="status-text">Click microphone to start</span>
+            </div>
+            
+            <div id="volume-indicator">
+                <div class="volume-bar"></div>
+                <div class="volume-bar"></div>
+                <div class="volume-bar"></div>
+                <div class="volume-bar"></div>
+                <div class="volume-bar"></div>
+            </div>
+            
+            <button id="mic-button" class="inactive" title="Start Conversation">
+                🎙️
+            </button>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="hidden">
+            <div class="spinner"></div>
+            <p>Loading avatar...</p>
+        </div>
+
+        <!-- Error Toast -->
+        <div id="error-toast" class="hidden"></div>
+    </div>
+
+    <!-- Application Scripts -->
+    <script src="/static/js/live2d-avatar.js"></script>
+    <script src="/static/js/websocket-client.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
