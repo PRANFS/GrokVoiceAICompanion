@@ -6,6 +6,7 @@
  * - Audio capture from microphone (24kHz PCM16)
  * - Audio playback of Grok responses
  * - Speaking state detection for lip sync
+ * - Language selection and English subtitles
  */
 
 class GrokWebSocketClient {
@@ -41,8 +42,9 @@ class GrokWebSocketClient {
         this.currentTranscript = '';
         this.volumeCheckInterval = null;
         this.currentVolume = 0;
+        this.selectedLanguage = 'en';
         
-        // Audio config
+        // Audio config (24kHz is xAI's default and most reliable)
         this.SAMPLE_RATE = 24000;
         this.BUFFER_SIZE = 4096;
     }
@@ -50,17 +52,20 @@ class GrokWebSocketClient {
     /**
      * Connect to WebSocket server
      */
-    async connect() {
+    async connect(language = 'en') {
         if (this.ws?.readyState === WebSocket.OPEN) {
             console.log('Already connected');
             return;
         }
         
+        this.selectedLanguage = language;
         this.setState('connecting');
         
         return new Promise((resolve, reject) => {
             try {
-                this.ws = new WebSocket(this.wsUrl);
+                // Add language as query parameter
+                const wsUrlWithLang = `${this.wsUrl}?language=${language}`;
+                this.ws = new WebSocket(wsUrlWithLang);
                 
                 this.ws.onopen = () => {
                     console.log('✅ Connected to WebSocket server');
@@ -88,6 +93,20 @@ class GrokWebSocketClient {
                 reject(error);
             }
         });
+    }
+    
+    /**
+     * Send language change notification to server
+     */
+    sendLanguageChange(language) {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.selectedLanguage = language;
+            this.ws.send(JSON.stringify({
+                type: 'language.change',
+                language: language
+            }));
+            console.log(`🌐 Sent language change: ${language}`);
+        }
     }
     
     /**
@@ -248,12 +267,15 @@ class GrokWebSocketClient {
                 case 'response.audio_transcript.delta':
                     if (message.delta) {
                         this.currentTranscript += message.delta;
+                        // Pass transcript to UI for display and subtitles
                         this.onTranscript(this.currentTranscript, 'assistant', false);
                     }
                     break;
                     
                 case 'response.audio_transcript.done':
-                    this.onTranscript(message.transcript || this.currentTranscript, 'assistant', true);
+                    const transcript = message.transcript || this.currentTranscript;
+                    const englishTranslation = message.english_translation || null;
+                    this.onTranscript(transcript, 'assistant', true, englishTranslation);
                     this.currentTranscript = '';
                     break;
                     

@@ -9,17 +9,32 @@ let avatar = null;
 let wsClient = null;
 let isSessionActive = false;
 let lipSyncValue = 0;
+let selectedLanguage = 'en';
 
 // DOM Elements
 const micButton = document.getElementById('mic-button');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const modelDropdown = document.getElementById('model-dropdown');
+const languageDropdown = document.getElementById('language-dropdown');
 const loadCustomBtn = document.getElementById('load-custom-btn');
 const customModelInput = document.getElementById('custom-model-input');
 const transcriptPanel = document.getElementById('transcript-panel');
 const transcriptContent = document.getElementById('transcript-content');
 const volumeBars = document.querySelectorAll('.volume-bar');
+const subtitleDisplay = document.getElementById('subtitle-display');
+const subtitleText = document.getElementById('subtitle-text');
+
+// Language display names
+const languageNames = {
+    'en': 'English',
+    'ja': 'Japanese',
+    'ko': 'Korean',
+    'zh': 'Chinese',
+    'es': 'Spanish',
+    'fr': 'French',
+    'de': 'German'
+};
 
 /**
  * Initialize the application
@@ -49,9 +64,9 @@ async function init() {
             updateStatus(state);
         },
         
-        onTranscript: (text, role, isFinal) => {
+        onTranscript: (text, role, isFinal, englishText = null) => {
             if (isFinal) {
-                addTranscript(text, role);
+                addTranscript(text, role, englishText);
             } else {
                 updateCurrentTranscript(text);
             }
@@ -92,6 +107,17 @@ function setupEventListeners() {
     // Model dropdown
     modelDropdown.addEventListener('change', () => {
         avatar.loadModel(modelDropdown.value);
+    });
+    
+    // Language dropdown
+    languageDropdown.addEventListener('change', () => {
+        selectedLanguage = languageDropdown.value;
+        console.log(`🌐 Language changed to: ${languageNames[selectedLanguage]}`);
+        
+        // If session is active, notify about the language change
+        if (isSessionActive && wsClient) {
+            wsClient.sendLanguageChange(selectedLanguage);
+        }
     });
     
     // Custom model button
@@ -135,8 +161,11 @@ async function startConversation() {
     try {
         updateStatus('connecting');
         
-        // Connect to WebSocket
-        await wsClient.connect();
+        // Get selected language
+        selectedLanguage = languageDropdown.value;
+        
+        // Connect to WebSocket with language parameter
+        await wsClient.connect(selectedLanguage);
         
         // Start audio capture
         const success = await wsClient.startAudioCapture();
@@ -170,6 +199,7 @@ function stopConversation() {
     updateStatus('disconnected');
     lipSyncValue = 0;
     avatar.setLipSync(0);
+
 }
 
 /**
@@ -215,12 +245,20 @@ function updateVolumeBars(volume) {
 /**
  * Add transcript line
  */
-function addTranscript(text, role) {
+function addTranscript(text, role, englishText = null) {
     transcriptPanel.classList.remove('hidden');
     
     const line = document.createElement('p');
     line.className = `transcript-line ${role}`;
-    line.innerHTML = `<strong>${role === 'user' ? 'You:' : 'AI:'}</strong> ${text}`;
+    
+    if (selectedLanguage !== 'en' && role === 'assistant' && englishText) {
+        // Show English translation with original language below
+        line.innerHTML = `<strong>AI:</strong> ${englishText}
+            <span class="language-tag">${languageNames[selectedLanguage]}</span>
+            <span class="original-text">${text}</span>`;
+    } else {
+        line.innerHTML = `<strong>${role === 'user' ? 'You:' : 'AI:'}</strong> ${text}`;
+    }
     
     transcriptContent.appendChild(line);
     transcriptPanel.scrollTop = transcriptPanel.scrollHeight;
@@ -240,6 +278,7 @@ function updateCurrentTranscript(text) {
         transcriptContent.appendChild(current);
     }
     
+    // Just show the text in the transcript panel (no subtitles)
     current.innerHTML = `<strong>AI:</strong> ${text}`;
     transcriptPanel.scrollTop = transcriptPanel.scrollHeight;
 }

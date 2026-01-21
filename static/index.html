@@ -29,6 +29,22 @@
             </select>
             <button id="load-custom-btn" class="secondary-btn">📁 Load Custom</button>
             <input type="file" id="custom-model-input" accept=".model3.json" style="display: none;">
+            
+            <label>Voice Language</label>
+            <select id="language-dropdown">
+                <option value="en">🇬🇧 English</option>
+                <option value="ja">🇯🇵 Japanese (日本語)</option>
+                <option value="ko">🇰🇷 Korean (한국어)</option>
+                <option value="zh">🇨🇳 Chinese (中文)</option>
+                <option value="es">🇪🇸 Spanish (Español)</option>
+                <option value="fr">🇫🇷 French (Français)</option>
+                <option value="de">🇩🇪 German (Deutsch)</option>
+            </select>
+        </div>
+
+        <!-- Subtitle Display (for non-English languages) -->
+        <div id="subtitle-display" class="hidden">
+            <p id="subtitle-text"></p>
         </div>
 
         <!-- Transcript Panel -->

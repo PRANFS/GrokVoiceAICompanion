@@ -14,6 +14,9 @@ aiohttp>=3.9.0
 # Environment variables
 python-dotenv>=1.0.0
 
+# Translation
+deep-translator>=1.11.4
+
 # Static files and templates
 jinja2>=3.1.3
 aiofiles>=23.2.1

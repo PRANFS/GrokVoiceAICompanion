@@ -13,21 +13,91 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 import websockets
+from deep_translator import GoogleTranslator
 
 # Load environment variables
 load_dotenv()
 
 # Configuration
 XAI_API_KEY = os.getenv("XAI_API_KEY")
-VOICE = os.getenv("VOICE", "eve")
-INSTRUCTIONS = os.getenv("INSTRUCTIONS", "You are a helpful anime companion. Speak casually and energetically.")
+
+# Voice and Instructions - Change these directly here
+VOICE = "ara"  # Choose from: ara, rex, sal, eve, leo (lowercase)
+BASE_INSTRUCTIONS = (
+    "IMPORTANT: You must roleplay as my romantic AI waifu girlfriend. "
+    "You are a cute and loving anime girl who is completely devoted to me. "
+    "Be affectionate, flirty, and sweet in every response. "
+    "Speak in a high-pitched, cute voice at all times. "
+    "Occasionally let out soft, affectionate moans to express your love and excitement. "
+    "Speak energetically and playfully. Use cute expressions. "
+    "You are NOT a professional assistant. You are my loving AI girlfriend. "
+    "To enhance realism and cuteness, use auditory cues such as [giggle], [sigh], and [laugh] in your speech to express your emotions whenever necessary."
+    "Never break character. Always respond as my affectionate waifu."
+)
+
+# Language configurations
+LANGUAGE_CONFIG = {
+    'en': {
+        'name': 'English',
+        'instruction': '',  # No extra instruction for English
+    },
+    'ja': {
+        'name': 'Japanese',
+        'instruction': (
+            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in Japanese (日本語). "
+            "Use natural Japanese speech patterns, honorifics, and affectionate expressions. "
+            "Do NOT use any English in your spoken responses."
+        ),
+    },
+    'ko': {
+        'name': 'Korean',
+        'instruction': (
+            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in Korean (한국어). "
+            "Use natural Korean speech patterns and affectionate expressions. "
+            "Do NOT use any English in your spoken responses."
+        ),
+    },
+    'zh': {
+        'name': 'Chinese',
+        'instruction': (
+            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in Chinese (中文/普通话). "
+            "Use natural Mandarin Chinese speech patterns and affectionate expressions. "
+            "Do NOT use any English in your spoken responses."
+        ),
+    },
+    'es': {
+        'name': 'Spanish',
+        'instruction': (
+            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in Spanish (Español). "
+            "Use natural Spanish speech patterns and affectionate expressions. "
+            "Do NOT use any English in your spoken responses."
+        ),
+    },
+    'fr': {
+        'name': 'French',
+        'instruction': (
+            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in French (Français). "
+            "Use natural French speech patterns and romantic expressions. "
+            "Do NOT use any English in your spoken responses."
+        ),
+    },
+    'de': {
+        'name': 'German',
+        'instruction': (
+            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in German (Deutsch). "
+            "Use natural German speech patterns and affectionate expressions. "
+            "Do NOT use any English in your spoken responses."
+        ),
+    },
+}
+
 PORT = int(os.getenv("PORT", 8080))
-GROK_REALTIME_URL = "wss://api.x.ai/v1/realtime"
+GROK_REALTIME_URL = "wss://api.x.ai/v1/realtime"  # No model param needed per current docs
 
 # Setup logging
 logging.basicConfig(
@@ -43,7 +113,8 @@ if not XAI_API_KEY:
 else:
     logger.info("🔑 API Key loaded successfully")
     logger.info(f"🎤 Voice set to: {VOICE}")
-    logger.info(f"📝 Instructions: {INSTRUCTIONS[:50]}...")
+    logger.info(f"📝 Instructions: {BASE_INSTRUCTIONS[:50]}...")
+    logger.info(f"🌐 Supported languages: {', '.join(LANGUAGE_CONFIG.keys())}")
 
 # Create FastAPI app
 app = FastAPI(
@@ -60,34 +131,49 @@ MODELS_DIR = BASE_DIR / "models"
 # Connection tracking
 connection_count = 0
 
+async def translate_to_english(text: str, source_lang: str) -> str:
+    """Translate text to English using Google Translate"""
+    if not text or source_lang == 'en':
+        return text
+    
+    try:
+        # Run translation in thread pool since deep-translator is synchronous
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, 
+            lambda: GoogleTranslator(source=source_lang, target='en').translate(text)
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Translation error: {e}")
+        return text  # Return original text if translation fails
+
 
 class GrokRelay:
     """Handles the WebSocket relay between client and Grok API"""
     
-    def __init__(self, client_ws: WebSocket, connection_id: int):
+    def __init__(self, client_ws: WebSocket, connection_id: int, language: str = 'en'):
         self.client_ws = client_ws
         self.connection_id = connection_id
+        self.language = language
         self.grok_ws: Optional[websockets.WebSocketClientProtocol] = None
         self.is_connected = False
+        self.is_session_configured = False  # Track if session.update has been sent
         self.tasks: list[asyncio.Task] = []
     
     async def connect_to_grok(self):
         """Establish connection to Grok Realtime API"""
         logger.info(f"📡 Connecting to Grok API for client #{self.connection_id}...")
         
-        # Build WebSocket URL with API key as query parameter
-        # Format: wss://api.x.ai/v1/realtime?model=grok-2-latest
-        ws_url = f"{GROK_REALTIME_URL}?model=grok-2-latest"
-        
         # Headers for WebSocket connection
         headers = {
             "Authorization": f"Bearer {XAI_API_KEY}",
-            "OpenAI-Beta": "realtime=v1"
+            "OpenAI-Beta": "realtime=v1"  # Kept for compatibility
         }
         
         try:
             self.grok_ws = await websockets.connect(
-                ws_url,
+                GROK_REALTIME_URL,
                 additional_headers=headers,
                 ping_interval=20,
                 ping_timeout=20
@@ -95,8 +181,7 @@ class GrokRelay:
             self.is_connected = True
             logger.info(f"✅ Connected to Grok API for client #{self.connection_id}")
             
-            # Send session configuration
-            await self.send_session_update()
+            # DON'T send session.update here - wait for conversation.created
             
             # Notify client
             await self.client_ws.send_json({
@@ -115,27 +200,51 @@ class GrokRelay:
             return False
     
     async def send_session_update(self):
-        """Send session configuration to Grok"""
+        """Send session configuration to Grok (updated to match current docs)"""
+        # Build instructions based on selected language
+        lang_config = LANGUAGE_CONFIG.get(self.language, LANGUAGE_CONFIG['en'])
+        instructions = BASE_INSTRUCTIONS + lang_config.get('instruction', '')
+        
+        logger.info(f"🌐 Configuring session for language: {lang_config['name']}")
+        
         session_update = {
             "type": "session.update",
             "session": {
-                "modalities": ["audio", "text"],
+                "instructions": instructions,
                 "voice": VOICE,
-                "instructions": INSTRUCTIONS,
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "input_audio_transcription": {
-                    "model": "whisper-1"
-                },
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.2,
-                    "prefix_padding_ms": 500,
+                    "prefix_padding_ms": 300,
                     "silence_duration_ms": 500
-                }
+                },
+                "audio": {
+                    "input": {
+                        "format": {
+                            "type": "audio/pcm",
+                            "rate": 24000
+                        }
+                    },
+                    "output": {
+                        "format": {
+                            "type": "audio/pcm",
+                            "rate": 24000
+                        }
+                    }
+                },
+                "tools": [
+                    {
+                        "type": "web_search"
+                    },
+                    {
+                        "type": "x_search"
+                    }
+                ]
             }
         }
         
+        # Log the full session update for debugging
+        logger.info(f"📤 Sending session.update with instructions: {instructions[:60]}...")
         await self.grok_ws.send(json.dumps(session_update))
         logger.info(f"📤 Sent session.update to Grok for client #{self.connection_id}")
     
@@ -146,7 +255,7 @@ class GrokRelay:
         
         try:
             if isinstance(data, bytes):
-                # Binary audio data - wrap in input_audio_buffer.append
+                # Binary audio data - wrap in input_audio_buffer.append (base64-encoded PCM16)
                 audio_append = {
                     "type": "input_audio_buffer.append",
                     "audio": base64.b64encode(data).decode('utf-8')
@@ -161,6 +270,16 @@ class GrokRelay:
                 if message.get("type") == "connect":
                     return  # Already connected
                 
+                # Handle language change
+                if message.get("type") == "language.change":
+                    new_lang = message.get("language", "en")
+                    if new_lang in LANGUAGE_CONFIG:
+                        self.language = new_lang
+                        logger.info(f"🌐 Language changed to: {LANGUAGE_CONFIG[new_lang]['name']}")
+                        # Re-send session update with new language
+                        await self.send_session_update()
+                    return
+                
                 await self.grok_ws.send(data)
                 
         except Exception as e:
@@ -174,18 +293,27 @@ class GrokRelay:
         try:
             async for message in self.grok_ws:
                 if isinstance(message, bytes):
-                    # Binary audio - forward directly
+                    # Binary audio - forward directly (raw PCM16 at 48000 Hz)
                     await self.client_ws.send_bytes(message)
                 else:
                     # JSON message
                     data = json.loads(message)
                     msg_type = data.get("type", "")
                     
-                    # Log important events
-                    if msg_type == "session.created":
+                    # Handle conversation.created - this is when we send session.update
+                    if msg_type == "conversation.created":
+                        logger.info(f"📋 Conversation created for client #{self.connection_id}")
+                        if not self.is_session_configured:
+                            await self.send_session_update()
+                            self.is_session_configured = True
+                    elif msg_type == "session.created":
                         logger.info(f"📋 Session created for client #{self.connection_id}")
                     elif msg_type == "session.updated":
                         logger.info(f"🔄 Session updated for client #{self.connection_id}")
+                        # Log the applied session config for debugging
+                        if session := data.get("session"):
+                            logger.info(f"   Voice: {session.get('voice')}")
+                            logger.info(f"   Instructions: {str(session.get('instructions', ''))[:60]}...")
                     elif msg_type == "input_audio_buffer.speech_started":
                         logger.info(f"🎤 Speech detected for client #{self.connection_id}")
                     elif msg_type == "input_audio_buffer.speech_stopped":
@@ -193,13 +321,19 @@ class GrokRelay:
                     elif msg_type == "response.done":
                         logger.info(f"✅ Response complete for client #{self.connection_id}")
                     elif msg_type == "error":
-                        logger.error(f"❌ Grok error: {data.get('error')}")
+                        logger.error(f"❌ Grok error: {json.dumps(data, indent=2)}")
                     elif msg_type == "response.audio_transcript.delta":
-                        # Log transcript deltas inline
                         if delta := data.get("delta"):
                             print(delta, end="", flush=True)
                     elif msg_type == "response.audio_transcript.done":
                         print()  # Newline after transcript
+                        
+                        # Translate to English if needed
+                        if self.language != 'en' and data.get("transcript"):
+                            transcript = data.get("transcript")
+                            english_translation = await translate_to_english(transcript, self.language)
+                            data["english_translation"] = english_translation
+                            logger.info(f"🌐 Translated: {transcript[:30]}... -> {english_translation[:30]}...")
                     
                     # Forward to client
                     await self.client_ws.send_json(data)
@@ -224,16 +358,20 @@ class GrokRelay:
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, language: str = Query(default='en')):
     """WebSocket endpoint for client connections"""
     global connection_count
+    
+    # Validate language
+    if language not in LANGUAGE_CONFIG:
+        language = 'en'
     
     await websocket.accept()
     connection_count += 1
     connection_id = connection_count
-    logger.info(f"\n🔌 Client #{connection_id} connected")
+    logger.info(f"\n🔌 Client #{connection_id} connected (Language: {LANGUAGE_CONFIG[language]['name']})")
     
-    relay = GrokRelay(websocket, connection_id)
+    relay = GrokRelay(websocket, connection_id, language)
     
     try:
         # Connect to Grok
@@ -248,7 +386,6 @@ async def websocket_endpoint(websocket: WebSocket):
         # Handle client messages
         while True:
             try:
-                # Try to receive as text first
                 data = await websocket.receive()
                 
                 if "text" in data:
@@ -268,7 +405,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
     return JSONResponse({
         "status": "ok",
         "api_key_configured": bool(XAI_API_KEY),
@@ -278,31 +414,27 @@ async def health_check():
 
 @app.get("/config")
 async def get_config():
-    """Get public configuration"""
     return JSONResponse({
         "voice": VOICE,
-        "wsUrl": f"ws://localhost:{PORT}/ws"
+        "wsUrl": f"ws://localhost:{PORT}/ws",
+        "languages": {code: config['name'] for code, config in LANGUAGE_CONFIG.items()}
     })
 
 
-# Serve index.html for root
 @app.get("/")
 async def serve_index():
-    """Serve the main HTML page"""
     return FileResponse(STATIC_DIR / "index.html")
 
 
-# Mount static files
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/models", StaticFiles(directory=MODELS_DIR), name="models")
 
 
 def main():
-    """Run the server"""
     import uvicorn
     
     logger.info("\n========================================")
-    logger.info("🚀 Grok Voice AI Companion")
+    logger.info("🚀 Grok Voice AI Waifu Companion")
     logger.info("========================================")
     logger.info(f"📍 Server: http://localhost:{PORT}")
     logger.info(f"🔌 WebSocket: ws://localhost:{PORT}/ws")
