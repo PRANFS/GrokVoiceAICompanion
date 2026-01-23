@@ -323,58 +323,55 @@ class Live2DAvatar {
      * @param {number} value - Mouth open amount (0-1)
      * @param {string} vowel - Optional vowel hint ('a', 'i', 'u', 'e', 'o')
      */
+    // Replace entire setLipSync function with this optimized version
     setLipSync(value, vowel = null) {
-        const mouthValue = Math.min(1, Math.max(0, value));
+        const intensity = Math.min(1, Math.max(0, value));
         const state = this.lipSyncState;
-        
-        // Smooth transition for mouth opening
-        state.mouthOpen += (mouthValue - state.mouthOpen) * 0.3;
-        this.setParam(this.PARAMS.MOUTH_OPEN_Y, state.mouthOpen);
-        
-        // If speaking (value > threshold)
-        if (mouthValue > 0.1) {
-            // Determine vowel - use provided or cycle through for natural speech
-            let targetVowel = vowel;
-            if (!targetVowel) {
-                // Simulate vowel variation based on time for more natural movement
-                const vowels = ['a', 'e', 'i', 'o', 'u'];
-                const vowelIndex = Math.floor((Date.now() / 100) % 5);
-                targetVowel = vowels[vowelIndex];
-            }
-            
-            // Set target vowel values
-            const targetA = targetVowel === 'a' ? mouthValue : 0;
-            const targetI = targetVowel === 'i' ? mouthValue : 0;
-            const targetU = targetVowel === 'u' ? mouthValue : 0;
-            const targetE = targetVowel === 'e' ? mouthValue : 0;
-            const targetO = targetVowel === 'o' ? mouthValue : 0;
-            
-            // Smooth transitions
-            const smoothing = 0.25;
-            state.vowelA += (targetA - state.vowelA) * smoothing;
-            state.vowelI += (targetI - state.vowelI) * smoothing;
-            state.vowelU += (targetU - state.vowelU) * smoothing;
-            state.vowelE += (targetE - state.vowelE) * smoothing;
-            state.vowelO += (targetO - state.vowelO) * smoothing;
-        } else {
-            // Fade out all vowels when silent
-            const fadeSpeed = 0.15;
-            state.vowelA *= (1 - fadeSpeed);
-            state.vowelI *= (1 - fadeSpeed);
-            state.vowelU *= (1 - fadeSpeed);
-            state.vowelE *= (1 - fadeSpeed);
-            state.vowelO *= (1 - fadeSpeed);
+
+        console.log(`[Live2D] setLipSync: intensity=${intensity.toFixed(2)}, vowel=${vowel}`);
+
+        // === Mouth openness: semi-binary (full when speaking) ===
+        const targetOpen = intensity > 0.15 ? 1.0 : 0.0;  // threshold avoids micro-movements
+        const smoothSpeed = 0.4;  // fast but natural (open & close same speed)
+        state.mouthOpen += (targetOpen - state.mouthOpen) * smoothSpeed;
+
+        this.setParam(this.PARAMS.MOUTH_OPEN_Y, state.mouthOpen * 1.0);  // multiplier 1.0
+
+        // === Vowel shapes ===
+        // Remember last detected vowel
+        if (vowel && intensity > 0.15) {
+            state.currentVowel = vowel.toLowerCase();
         }
-        
-        // Apply vowel parameters
-        this.setParam(this.PARAMS.VOWEL_A, state.vowelA);
-        this.setParam(this.PARAMS.VOWEL_I, state.vowelI);
-        this.setParam(this.PARAMS.VOWEL_U, state.vowelU);
-        this.setParam(this.PARAMS.VOWEL_E, state.vowelE);
-        this.setParam(this.PARAMS.VOWEL_O, state.vowelO);
-        
-        // Slight mouth form variation when speaking
-        if (mouthValue > 0.1) {
+
+        const speaking = state.mouthOpen > 0.2;
+        const vowelSmooth = 0.5;  // fast shape changes
+        const fadeSpeed = 0.85;   // quick fade when silent
+
+        if (speaking && state.currentVowel) {
+            // Drive only the active vowel to full strength
+            state.vowelA += (state.currentVowel === 'a' ? state.mouthOpen : 0 - state.vowelA) * vowelSmooth;
+            state.vowelI += (state.currentVowel === 'i' ? state.mouthOpen : 0 - state.vowelI) * vowelSmooth;
+            state.vowelU += (state.currentVowel === 'u' ? state.mouthOpen : 0 - state.vowelU) * vowelSmooth;
+            state.vowelE += (state.currentVowel === 'e' ? state.mouthOpen : 0 - state.vowelE) * vowelSmooth;
+            state.vowelO += (state.currentVowel === 'o' ? state.mouthOpen : 0 - state.vowelO) * vowelSmooth;
+        } else {
+            // Fade all vowels when silent/low
+            state.vowelA *= fadeSpeed;
+            state.vowelI *= fadeSpeed;
+            state.vowelU *= fadeSpeed;
+            state.vowelE *= fadeSpeed;
+            state.vowelO *= fadeSpeed;
+        }
+
+        // Apply with multiplier 1.0
+        this.setParam(this.PARAMS.VOWEL_A, state.vowelA * 1.0);
+        this.setParam(this.PARAMS.VOWEL_I, state.vowelI * 1.0);
+        this.setParam(this.PARAMS.VOWEL_U, state.vowelU * 1.0);
+        this.setParam(this.PARAMS.VOWEL_E, state.vowelE * 1.0);
+        this.setParam(this.PARAMS.VOWEL_O, state.vowelO * 1.0);
+
+        // Keep the slight mouth form variation when speaking
+        if (intensity > 0.1) {
             this.setParam(this.PARAMS.MOUTH_FORM, 0.5 + Math.sin(Date.now() / 200) * 0.2);
         }
     }

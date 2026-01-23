@@ -236,6 +236,7 @@ class GrokWebSocketClient {
             }
             
             if (!this.isSpeaking) {
+                console.log(`[WebSocket] User volume: ${this.currentVolume.toFixed(2)}, type=user`);
                 this.onVolumeChange(this.currentVolume, 'user');
             }
         }, 50);
@@ -246,12 +247,14 @@ class GrokWebSocketClient {
      */
     handleMessage(event) {
         if (event.data instanceof Blob) {
+            console.log(`[WebSocket] Received BLOB message, size=${event.data.size}`);
             this.handleAudioBlob(event.data);
             return;
         }
         
         try {
             const message = JSON.parse(event.data);
+            console.log(`[WebSocket] Received JSON message: type=${message.type}`);
             
             switch (message.type) {
                 case 'connection.ready':
@@ -260,6 +263,7 @@ class GrokWebSocketClient {
                     
                 case 'response.audio.delta':
                     if (message.delta) {
+                        console.log(`[WebSocket] Received audio.delta, length=${message.delta.length}`);
                         this.handleAudioDelta(message.delta);
                     }
                     break;
@@ -317,11 +321,13 @@ class GrokWebSocketClient {
      * Handle audio delta (base64)
      */
     handleAudioDelta(base64Audio) {
+        console.log(`[WebSocket] handleAudioDelta: decoding base64, length=${base64Audio.length}`);
         const binaryString = atob(base64Audio);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
         }
+        console.log(`[WebSocket] Decoded ${bytes.length} bytes, queuing for playback`);
         this.queueAudioPlayback(bytes.buffer);
     }
     
@@ -329,7 +335,9 @@ class GrokWebSocketClient {
      * Handle binary audio blob
      */
     async handleAudioBlob(blob) {
+        console.log(`[WebSocket] handleAudioBlob: size=${blob.size}`);
         const arrayBuffer = await blob.arrayBuffer();
+        console.log(`[WebSocket] Converted to arrayBuffer, size=${arrayBuffer.byteLength}, queuing for playback`);
         this.queueAudioPlayback(arrayBuffer);
     }
     
@@ -337,10 +345,14 @@ class GrokWebSocketClient {
      * Queue audio for playback
      */
     queueAudioPlayback(arrayBuffer) {
+        console.log(`[WebSocket] queueAudioPlayback: adding ${arrayBuffer.byteLength} bytes to queue. Queue length before: ${this.audioQueue.length}`);
         this.audioQueue.push(arrayBuffer);
         
         if (!this.isPlaying) {
+            console.log(`[WebSocket] Starting playback (was not playing)`);
             this.playNextAudio();
+        } else {
+            console.log(`[WebSocket] Already playing, audio queued`);
         }
     }
     
@@ -348,8 +360,15 @@ class GrokWebSocketClient {
      * Play queued audio
      */
     async playNextAudio() {
+        console.log(`[WebSocket] playNextAudio called. Queue length: ${this.audioQueue.length}`);
+        
         if (this.audioQueue.length === 0) {
+            console.log(`[WebSocket] Queue empty, forcing final lip sync decay`);
             this.isPlaying = false;
+            // Extra forced decay calls to ensure mouth closes fully
+            this.onVolumeChange(0, 'assistant', null);
+            setTimeout(() => this.onVolumeChange(0, 'assistant', null), 100);
+            setTimeout(() => this.onVolumeChange(0, 'assistant', null), 200);
             return;
         }
         
@@ -391,9 +410,10 @@ class GrokWebSocketClient {
             source.connect(gainNode);
             gainNode.connect(this.playbackContext.destination);
             
-            // Calculate volume for lip sync
-            const rms = this.calculateRMS(float32);
-            this.onVolumeChange(Math.min(1, rms * 5), 'assistant');
+            // ENHANCED: Analyze for vowel detection
+            const vowelInfo = this.analyzeVowelFromAudio(float32, this.SAMPLE_RATE);
+            console.log(`[WebSocket] Calling onVolumeChange: intensity=${vowelInfo.intensity.toFixed(2)}, type=assistant, vowel=${vowelInfo.vowel}`);
+            this.onVolumeChange(vowelInfo.intensity, 'assistant', vowelInfo.vowel);
             
             source.onended = () => this.playNextAudio();
             source.start();
@@ -413,6 +433,79 @@ class GrokWebSocketClient {
             sum += samples[i] * samples[i];
         }
         return Math.sqrt(sum / samples.length);
+    }
+    
+    /**
+     * Analyze audio for vowel detection
+     * Uses formant frequency analysis to estimate vowels
+     * 
+     * Vowel formant frequencies (approximate):
+     * A: F1 ~700-1000Hz, F2 ~1200-1400Hz
+     * E: F1 ~400-600Hz, F2 ~2000-2400Hz
+     * I: F1 ~300-400Hz, F2 ~2200-2700Hz
+     * O: F1 ~500-700Hz, F2 ~800-1000Hz
+     * U: F1 ~300-400Hz, F2 ~800-1200Hz
+     */
+    analyzeVowelFromAudio(float32Array, sampleRate = 24000) {
+        const numSamples = float32Array.length;  // ← changed from min(..., 512)
+        
+        // Calculate energy, zero-crossing rate, and high-frequency content
+        let zeroCrossings = 0;
+        let energy = 0;
+        let highFreqEnergy = 0;
+        
+        for (let i = 1; i < numSamples; i++) {
+            // Zero crossing rate (indicates frequency)
+            if ((float32Array[i] >= 0) !== (float32Array[i-1] >= 0)) {
+                zeroCrossings++;
+            }
+            
+            // Total energy
+            energy += float32Array[i] * float32Array[i];
+            
+            // High frequency estimation (sample-to-sample difference)
+            const diff = Math.abs(float32Array[i] - float32Array[i-1]);
+            highFreqEnergy += diff * diff;
+        }
+        
+        energy = Math.sqrt(energy / numSamples);
+        highFreqEnergy = Math.sqrt(highFreqEnergy / numSamples);
+        const zcr = zeroCrossings / numSamples;
+        
+        if (energy < 0.005) {  // ← slightly lower threshold, was 0.01
+        return { vowel: null, intensity: 0 };
+        }
+        
+        // High-frequency ratio
+        const hfRatio = highFreqEnergy / (energy + 0.001);
+        
+        // Estimate vowel based on acoustic characteristics
+        // High ZCR + high HF = front vowels (I, E)
+        // Low ZCR + low HF = back rounded vowels (O, U)
+        // Medium = open vowels (A)
+        
+        let vowel = 'a'; // default
+        
+        if (zcr > 0.40 && hfRatio > 0.7) {
+            // Very high frequency - likely 'I'
+            vowel = 'i';
+        } else if (zcr > 0.28 && hfRatio > 0.50) {
+            // High-mid frequency - likely 'E'
+            vowel = 'e';
+        } else if (zcr < 0.13 && hfRatio < 0.22) {
+            // Very low frequency - likely 'U'
+            vowel = 'u';
+        } else if (zcr < 0.18 && hfRatio < 0.30) {
+            // Low-mid frequency - likely 'O'
+            vowel = 'o';
+        } else {
+            // Middle range - likely 'A'
+            vowel = 'a';
+        }
+        
+        const intensity = Math.min(1, energy * 40);  // ← was *50, slightly reduced
+        
+        return { vowel, intensity };
     }
     
     /**

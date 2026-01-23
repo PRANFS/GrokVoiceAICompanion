@@ -75,15 +75,30 @@ async function init() {
         onSpeakingChange: (speaking, type) => {
             if (type === 'assistant') {
                 updateStatus(speaking ? 'speaking' : 'connected');
+                if (!speaking) {
+                    // Extra force-close when Grok finishes response
+                    lipSyncValue = 0;
+                    avatar.setLipSync(0);
+                }
             }
         },
         
-        onVolumeChange: (volume, type) => {
-            // Smooth lip sync
-            lipSyncValue = lipSyncValue * 0.7 + volume * 0.3;
-            avatar.setLipSync(lipSyncValue);
+        onVolumeChange: (volume, type, vowel = null) => {
+            console.log(`[App] onVolumeChange: volume=${volume.toFixed(2)}, type=${type}, vowel=${vowel}`);
             
-            // Update volume bars
+            // Only animate avatar when AI is speaking, not when user speaks
+            if (type === 'assistant') {
+                // More responsive smoothing for faster lip sync
+                lipSyncValue = lipSyncValue * 0.1 + volume * 0.9;
+                
+                console.log(`[App] Updating avatar lip sync: lipSyncValue=${lipSyncValue.toFixed(2)}, vowel=${vowel}`);
+                // Pass vowel to avatar for proper mouth shape
+                avatar.setLipSync(lipSyncValue, vowel);
+            } else {
+                console.log(`[App] Skipping avatar update (type=${type})`);
+            }
+            
+            // Update volume bars for both user and assistant
             updateVolumeBars(volume);
         },
         
