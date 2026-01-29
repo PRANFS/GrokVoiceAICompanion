@@ -144,9 +144,31 @@ class Live2DAvatar {
                 this.animationState.eyeLookY = ((y - bounds.y) / bounds.height - 0.5) * 2;
             });
             
-            // Disable motion sounds globally
+            // Disable ALL motion sounds globally
             if (this.model.internalModel?.motionManager) {
                 this.model.internalModel.motionManager.settings.sound = '';
+                
+                // Also disable sounds in all motion definitions
+                const definitions = this.model.internalModel.motionManager.definitions;
+                if (definitions) {
+                    for (const group of Object.keys(definitions)) {
+                        const motions = definitions[group];
+                        if (Array.isArray(motions)) {
+                            for (const motion of motions) {
+                                if (motion) {
+                                    motion.Sound = undefined;
+                                    motion.sound = undefined;
+                                    motion.SoundPath = undefined;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Disable the internal sound manager if it exists
+            if (this.model.internalModel?.coreModel?.motionManager?.sound) {
+                this.model.internalModel.coreModel.motionManager.sound = null;
             }
             
             // Add click interaction for hit areas

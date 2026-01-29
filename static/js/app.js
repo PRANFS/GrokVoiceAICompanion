@@ -25,6 +25,15 @@ const volumeBars = document.querySelectorAll('.volume-bar');
 const subtitleDisplay = document.getElementById('subtitle-display');
 const subtitleText = document.getElementById('subtitle-text');
 
+// Personality Modal Elements
+const personalityBtn = document.getElementById('personality-btn');
+const personalityModal = document.getElementById('personality-modal');
+const closeModalBtn = document.getElementById('close-modal-btn');
+const voiceSelect = document.getElementById('voice-select');
+const instructionsTextarea = document.getElementById('instructions-textarea');
+const cancelPersonalityBtn = document.getElementById('cancel-personality-btn');
+const savePersonalityBtn = document.getElementById('save-personality-btn');
+
 // Language display names
 const languageNames = {
     'en': 'English',
@@ -151,9 +160,32 @@ function setupEventListeners() {
     
     // Keyboard shortcut
     document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' && !e.repeat) {
+        // Don't trigger shortcuts when typing in input fields
+        const activeElement = document.activeElement;
+        const isTyping = activeElement.tagName === 'INPUT' || 
+                         activeElement.tagName === 'TEXTAREA' || 
+                         activeElement.isContentEditable;
+        
+        if (e.code === 'Space' && !e.repeat && !isTyping) {
             e.preventDefault();
             toggleConversation();
+        }
+        // Close modal with Escape key
+        if (e.code === 'Escape' && !personalityModal.classList.contains('hidden')) {
+            closePersonalityModal();
+        }
+    });
+    
+    // Personality modal event listeners
+    personalityBtn.addEventListener('click', openPersonalityModal);
+    closeModalBtn.addEventListener('click', closePersonalityModal);
+    cancelPersonalityBtn.addEventListener('click', closePersonalityModal);
+    savePersonalityBtn.addEventListener('click', savePersonality);
+    
+    // Close modal when clicking outside
+    personalityModal.addEventListener('click', (e) => {
+        if (e.target === personalityModal) {
+            closePersonalityModal();
         }
     });
 }
@@ -317,6 +349,88 @@ function showError(message) {
     setTimeout(() => {
         toast.classList.add('hidden');
     }, 5000);
+}
+
+/**
+ * Open personality modal and load current settings
+ */
+async function openPersonalityModal() {
+    try {
+        // Fetch current personality settings
+        const response = await fetch('/personality');
+        const data = await response.json();
+        
+        // Populate the form
+        voiceSelect.value = data.voice.toLowerCase();
+        instructionsTextarea.value = data.instructions;
+        
+        // Show modal
+        personalityModal.classList.remove('hidden');
+    } catch (error) {
+        console.error('Failed to load personality settings:', error);
+        showError('Failed to load personality settings');
+    }
+}
+
+/**
+ * Close personality modal
+ */
+function closePersonalityModal() {
+    personalityModal.classList.add('hidden');
+}
+
+/**
+ * Save personality settings
+ */
+async function savePersonality() {
+    const voice = voiceSelect.value;
+    const instructions = instructionsTextarea.value.trim();
+    
+    if (!instructions) {
+        showError('Instructions cannot be empty');
+        return;
+    }
+    
+    savePersonalityBtn.disabled = true;
+    savePersonalityBtn.textContent = 'Saving...';
+    
+    try {
+        const response = await fetch('/personality', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                voice: voice,
+                instructions: instructions
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log('✅ Personality saved:', data);
+            closePersonalityModal();
+            
+            // Show success message
+            const toast = document.getElementById('error-toast');
+            toast.textContent = '✅ Personality saved! Restart conversation to apply.';
+            toast.style.background = 'rgba(107, 203, 119, 0.9)';
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+                toast.style.background = '';
+            }, 3000);
+        } else {
+            showError(data.error || 'Failed to save personality');
+        }
+    } catch (error) {
+        console.error('Failed to save personality:', error);
+        showError('Failed to save personality settings');
+    } finally {
+        savePersonalityBtn.disabled = false;
+        savePersonalityBtn.textContent = '💾 Save';
+    }
 }
 
 // Initialize on page load

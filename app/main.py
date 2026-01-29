@@ -127,9 +127,44 @@ app = FastAPI(
 BASE_DIR = Path(__file__).parent.parent
 STATIC_DIR = BASE_DIR / "static"
 MODELS_DIR = BASE_DIR / "models"
+SETTINGS_FILE = BASE_DIR / "personality_settings.json"
 
 # Connection tracking
 connection_count = 0
+
+
+def load_personality_settings():
+    """Load personality settings from file, or use defaults"""
+    global VOICE, BASE_INSTRUCTIONS
+    
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                VOICE = settings.get('voice', VOICE)
+                BASE_INSTRUCTIONS = settings.get('instructions', BASE_INSTRUCTIONS)
+                logger.info(f"📂 Loaded personality settings from file")
+                logger.info(f"   Voice: {VOICE}")
+                logger.info(f"   Instructions: {BASE_INSTRUCTIONS[:50]}...")
+        except Exception as e:
+            logger.error(f"Failed to load personality settings: {e}")
+
+
+def save_personality_settings():
+    """Save current personality settings to file"""
+    try:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump({
+                'voice': VOICE,
+                'instructions': BASE_INSTRUCTIONS
+            }, f, ensure_ascii=False, indent=2)
+        logger.info(f"💾 Saved personality settings to file")
+    except Exception as e:
+        logger.error(f"Failed to save personality settings: {e}")
+
+
+# Load settings on startup
+load_personality_settings()
 
 async def translate_to_english(text: str, source_lang: str) -> str:
     """Translate text to English using Google Translate"""
@@ -207,11 +242,15 @@ class GrokRelay:
         
         logger.info(f"🌐 Configuring session for language: {lang_config['name']}")
         
+        # Format voice name for API (capitalize first letter)
+        formatted_voice = VOICE.capitalize()
+        logger.info(f"🎤 Using voice: {formatted_voice}")
+        
         session_update = {
             "type": "session.update",
             "session": {
                 "instructions": instructions,
-                "voice": VOICE,
+                "voice": formatted_voice,
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.2,
@@ -418,6 +457,46 @@ async def get_config():
         "voice": VOICE,
         "wsUrl": f"ws://localhost:{PORT}/ws",
         "languages": {code: config['name'] for code, config in LANGUAGE_CONFIG.items()}
+    })
+
+
+@app.get("/personality")
+async def get_personality():
+    """Get current personality settings"""
+    return JSONResponse({
+        "voice": VOICE,
+        "instructions": BASE_INSTRUCTIONS
+    })
+
+
+@app.post("/personality")
+async def update_personality(request_data: dict):
+    """Update personality settings"""
+    global VOICE, BASE_INSTRUCTIONS
+    
+    if "voice" in request_data:
+        new_voice = request_data["voice"].lower()
+        valid_voices = ["ara", "rex", "sal", "eve", "leo"]
+        if new_voice in valid_voices:
+            VOICE = new_voice
+            logger.info(f"🎤 Voice updated to: {VOICE}")
+        else:
+            return JSONResponse(
+                {"error": f"Invalid voice. Choose from: {', '.join(valid_voices)}"},
+                status_code=400
+            )
+    
+    if "instructions" in request_data:
+        BASE_INSTRUCTIONS = request_data["instructions"]
+        logger.info(f"📝 Instructions updated: {BASE_INSTRUCTIONS[:50]}...")
+    
+    # Save settings to file for persistence across reloads
+    save_personality_settings()
+    
+    return JSONResponse({
+        "success": True,
+        "voice": VOICE,
+        "instructions": BASE_INSTRUCTIONS
     })
 
 

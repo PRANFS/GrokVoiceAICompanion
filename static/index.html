@@ -40,6 +40,35 @@
                 <option value="fr">🇫🇷 French (Français)</option>
                 <option value="de">🇩🇪 German (Deutsch)</option>
             </select>
+            
+            <button id="personality-btn" class="secondary-btn">🎭 Edit Personality</button>
+        </div>
+
+        <!-- Personality Editor Modal -->
+        <div id="personality-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🎭 Edit Personality</h2>
+                    <button id="close-modal-btn" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <label for="voice-select">Voice</label>
+                    <select id="voice-select">
+                        <option value="ara">Ara</option>
+                        <option value="rex">Rex</option>
+                        <option value="sal">Sal</option>
+                        <option value="eve">Eve</option>
+                        <option value="leo">Leo</option>
+                    </select>
+                    
+                    <label for="instructions-textarea">Base Instructions</label>
+                    <textarea id="instructions-textarea" rows="10" placeholder="Enter the personality instructions..."></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button id="cancel-personality-btn" class="secondary-btn">Cancel</button>
+                    <button id="save-personality-btn" class="primary-btn">💾 Save</button>
+                </div>
+            </div>
         </div>
 
         <!-- Subtitle Display (for non-English languages) -->
