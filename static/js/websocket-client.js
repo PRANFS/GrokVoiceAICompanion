@@ -18,6 +18,7 @@ class GrokWebSocketClient {
         this.onTranscript = options.onTranscript || (() => {});
         this.onSpeakingChange = options.onSpeakingChange || (() => {});
         this.onVolumeChange = options.onVolumeChange || (() => {});
+        this.onBackgroundUpdate = options.onBackgroundUpdate || (() => {});
         this.onError = options.onError || (() => {});
         
         // WebSocket
@@ -310,6 +311,13 @@ class GrokWebSocketClient {
                 case 'error':
                     console.error('❌ Grok error:', message.error);
                     this.onError({ type: 'grok', error: message.error });
+                    break;
+                    
+                case 'background.update':
+                    console.log('🎨 Background update:', message.topic);
+                    if (message.image_url) {
+                        this.onBackgroundUpdate(message.image_url, message.topic);
+                    }
                     break;
             }
         } catch (error) {

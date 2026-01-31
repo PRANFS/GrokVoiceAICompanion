@@ -10,6 +10,7 @@ let wsClient = null;
 let isSessionActive = false;
 let lipSyncValue = 0;
 let selectedLanguage = 'en';
+let currentBackgroundUrl = null;
 
 // DOM Elements
 const micButton = document.getElementById('mic-button');
@@ -24,6 +25,7 @@ const transcriptContent = document.getElementById('transcript-content');
 const volumeBars = document.querySelectorAll('.volume-bar');
 const subtitleDisplay = document.getElementById('subtitle-display');
 const subtitleText = document.getElementById('subtitle-text');
+const dynamicBackground = document.getElementById('dynamic-background');
 
 // Personality Modal Elements
 const personalityBtn = document.getElementById('personality-btn');
@@ -109,6 +111,11 @@ async function init() {
             
             // Update volume bars for both user and assistant
             updateVolumeBars(volume);
+        },
+        
+        onBackgroundUpdate: (imageUrl, topic) => {
+            console.log(`[App] Background update: ${topic}`);
+            updateBackground(imageUrl, topic);
         },
         
         onError: (err) => {
@@ -287,6 +294,56 @@ function updateVolumeBars(volume) {
             bar.classList.remove('active');
         }
     });
+}
+
+/**
+ * Update dynamic background image
+ */
+function updateBackground(imageUrl, topic) {
+    if (!imageUrl || !dynamicBackground) return;
+    
+    // Don't update if it's the same image
+    if (currentBackgroundUrl === imageUrl) return;
+    
+    currentBackgroundUrl = imageUrl;
+    
+    // Preload the image
+    const img = new Image();
+    img.onload = () => {
+        // Fade transition
+        dynamicBackground.style.opacity = '0';
+        
+        setTimeout(() => {
+            dynamicBackground.style.backgroundImage = `url(${imageUrl})`;
+            dynamicBackground.style.opacity = '1';
+            
+            // Show topic indicator briefly
+            showBackgroundNotification(topic);
+        }, 500);
+    };
+    img.onerror = () => {
+        console.error('Failed to load background image:', imageUrl);
+    };
+    img.src = imageUrl;
+}
+
+/**
+ * Show a notification when background changes
+ */
+function showBackgroundNotification(topic) {
+    const notification = document.getElementById('background-notification');
+    if (!notification) return;
+    
+    notification.textContent = `🎨 Mood: ${topic}`;
+    notification.classList.remove('hidden');
+    notification.classList.add('show');
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => {
+            notification.classList.add('hidden');
+        }, 500);
+    }, 3000);
 }
 
 /**

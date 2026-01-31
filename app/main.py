@@ -13,12 +13,17 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 import websockets
 from deep_translator import GoogleTranslator
+
+# Grok Imagine API configuration
+GROK_IMAGINE_URL = "https://api.x.ai/v1/images/generations"
+GROK_CHAT_URL = "https://api.x.ai/v1/chat/completions"
 
 # Load environment variables
 load_dotenv()
@@ -166,6 +171,159 @@ def save_personality_settings():
 # Load settings on startup
 load_personality_settings()
 
+# Track conversation context for background generation
+conversation_topics = {}  # connection_id -> {"current_topic": str, "last_background_url": str}
+
+
+async def analyze_topic_change(connection_id: int, transcript: str) -> tuple[bool, str]:
+    """
+    Analyze if the conversation topic has changed significantly.
+    Returns (has_changed, new_topic_description)
+    """
+    if not transcript or len(transcript.strip()) < 10:
+        return False, ""
+    
+    current_context = conversation_topics.get(connection_id, {"current_topic": "", "last_background_url": ""})
+    current_topic = current_context.get("current_topic", "")
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                GROK_CHAT_URL,
+                headers={
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "grok-4-1-fast-non-reasoning",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": """You are a topic analyzer. Given the current conversation topic and a new message, determine if the topic/mood has significantly changed.
+
+Respond in JSON format only:
+{"changed": true/false, "topic": "brief description of new topic/mood for image generation", "mood": "emotional mood like romantic, happy, sad, exciting, calm, etc."}
+
+The topic should be suitable for generating a background image. Focus on the emotional atmosphere and setting.
+Only mark as changed if the conversation shifts to a distinctly different subject or mood.
+Keep the topic description under 20 words."""
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Current topic: {current_topic if current_topic else 'None (conversation just started)'}\n\nNew message: {transcript}"
+                        }
+                    ],
+                    "temperature": 0.3
+                }
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                
+                # Parse JSON response
+                try:
+                    # Extract JSON from response (handle potential markdown formatting)
+                    if "```" in content:
+                        content = content.split("```")[1]
+                        if content.startswith("json"):
+                            content = content[4:]
+                    
+                    analysis = json.loads(content.strip())
+                    has_changed = analysis.get("changed", False)
+                    new_topic = analysis.get("topic", "")
+                    mood = analysis.get("mood", "calm")
+                    
+                    if has_changed and new_topic:
+                        full_topic = f"{mood} atmosphere, {new_topic}"
+                        logger.info(f"🎨 Topic changed for client #{connection_id}: {full_topic}")
+                        return True, full_topic
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse topic analysis: {e}")
+                    
+    except Exception as e:
+        logger.error(f"Error analyzing topic change: {e}")
+    
+    return False, ""
+
+
+async def generate_background_image(topic: str) -> Optional[str]:
+    """
+    Generate a background image using Grok Imagine API based on the topic.
+    Returns the image URL or None if generation fails.
+    """
+    if not topic:
+        return None
+    
+    try:
+        # Create a prompt optimized for background images
+        prompt = f"""A beautiful, immersive anime-style background scene. {topic}.
+Wide landscape format, dreamy and atmospheric, suitable as a backdrop.
+No people or characters, focus on environment and mood.
+High quality, detailed, vibrant colors, cinematic lighting."""
+        
+        logger.info(f"🖼️ Generating background image: {prompt[:80]}...")
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                GROK_IMAGINE_URL,
+                headers={
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "grok-imagine-image",
+                    "prompt": prompt,
+                    "n": 1,
+                    "aspect_ratio": "16:9",
+                    "resolution": "1k",
+                    "response_format": "url"
+                }
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                image_url = result.get("data", [{}])[0].get("url")
+                if image_url:
+                    logger.info(f"✅ Background image generated: {image_url[:80]}...")
+                    return image_url
+            else:
+                logger.error(f"❌ Image generation failed: {response.status_code} - {response.text}")
+                
+    except Exception as e:
+        logger.error(f"Error generating background image: {e}")
+    
+    return None
+
+
+async def update_background_if_needed(connection_id: int, transcript: str, client_ws: WebSocket):
+    """
+    Check if topic changed and generate new background if needed.
+    """
+    has_changed, new_topic = await analyze_topic_change(connection_id, transcript)
+    
+    if has_changed and new_topic:
+        # Update the stored topic
+        if connection_id not in conversation_topics:
+            conversation_topics[connection_id] = {}
+        conversation_topics[connection_id]["current_topic"] = new_topic
+        
+        # Generate new background image
+        image_url = await generate_background_image(new_topic)
+        
+        if image_url:
+            conversation_topics[connection_id]["last_background_url"] = image_url
+            
+            # Send background update to client
+            await client_ws.send_json({
+                "type": "background.update",
+                "image_url": image_url,
+                "topic": new_topic
+            })
+            logger.info(f"📤 Sent background update to client #{connection_id}")
+
+
 async def translate_to_english(text: str, source_lang: str) -> str:
     """Translate text to English using Google Translate"""
     if not text or source_lang == 'en':
@@ -195,6 +353,8 @@ class GrokRelay:
         self.is_connected = False
         self.is_session_configured = False  # Track if session.update has been sent
         self.tasks: list[asyncio.Task] = []
+        self.accumulated_transcript = ""  # Track AI response for topic analysis
+        self.pending_background_task: Optional[asyncio.Task] = None  # Background generation task
     
     async def connect_to_grok(self):
         """Establish connection to Grok Realtime API"""
@@ -357,13 +517,12 @@ class GrokRelay:
                         logger.info(f"🎤 Speech detected for client #{self.connection_id}")
                     elif msg_type == "input_audio_buffer.speech_stopped":
                         logger.info(f"🔇 Speech ended for client #{self.connection_id}")
-                    elif msg_type == "response.done":
-                        logger.info(f"✅ Response complete for client #{self.connection_id}")
                     elif msg_type == "error":
                         logger.error(f"❌ Grok error: {json.dumps(data, indent=2)}")
                     elif msg_type == "response.audio_transcript.delta":
                         if delta := data.get("delta"):
                             print(delta, end="", flush=True)
+                            self.accumulated_transcript += delta
                     elif msg_type == "response.audio_transcript.done":
                         print()  # Newline after transcript
                         
@@ -373,6 +532,24 @@ class GrokRelay:
                             english_translation = await translate_to_english(transcript, self.language)
                             data["english_translation"] = english_translation
                             logger.info(f"🌐 Translated: {transcript[:30]}... -> {english_translation[:30]}...")
+                    elif msg_type == "response.done":
+                        logger.info(f"✅ Response complete for client #{self.connection_id}")
+                        
+                        # Check for topic change and update background (non-blocking)
+                        if self.accumulated_transcript:
+                            transcript_for_analysis = self.accumulated_transcript
+                            self.accumulated_transcript = ""  # Reset for next response
+                            
+                            # Start background generation task (don't await - let it run in background)
+                            if self.pending_background_task:
+                                self.pending_background_task.cancel()
+                            self.pending_background_task = asyncio.create_task(
+                                update_background_if_needed(
+                                    self.connection_id,
+                                    transcript_for_analysis,
+                                    self.client_ws
+                                )
+                            )
                     
                     # Forward to client
                     await self.client_ws.send_json(data)
@@ -388,12 +565,20 @@ class GrokRelay:
         """Clean up connections"""
         self.is_connected = False
         
+        # Cancel pending background task
+        if self.pending_background_task:
+            self.pending_background_task.cancel()
+        
         for task in self.tasks:
             task.cancel()
         
         if self.grok_ws:
             await self.grok_ws.close()
             self.grok_ws = None
+        
+        # Clean up topic tracking for this connection
+        if self.connection_id in conversation_topics:
+            del conversation_topics[self.connection_id]
 
 
 @app.websocket("/ws")

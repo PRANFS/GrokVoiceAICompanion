@@ -18,6 +18,63 @@ body {
     color: #ffffff;
 }
 
+/* Dynamic Background */
+#dynamic-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 1;
+    transition: opacity 0.5s ease-in-out;
+}
+
+/* Add a subtle overlay to ensure avatar visibility */
+#dynamic-background::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, 
+        rgba(26, 26, 46, 0.3) 0%, 
+        rgba(22, 33, 62, 0.3) 50%, 
+        rgba(15, 52, 96, 0.3) 100%);
+    pointer-events: none;
+}
+
+/* Background Change Notification */
+#background-notification {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+    pointer-events: none;
+    max-width: 80%;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#background-notification.show {
+    opacity: 1;
+}
+
 /* Canvas Container */
 #canvas-container {
     position: absolute;
