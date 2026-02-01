@@ -4,7 +4,7 @@ AI Companion powered by xAI's Grok Voice Agent API with customizable Live2D avat
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-![](static/images/GrokVoice_Imagine.png)
+![](https://raw.githubusercontent.com/PRANFS/GrokVoiceAICompanion/main/static/images/GrokVoice_Imagine.png)
 
 ## Features
 
