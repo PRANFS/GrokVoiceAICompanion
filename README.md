@@ -4,12 +4,19 @@ AI Companion powered by xAI's Grok Voice Agent API with customizable Live2D avat
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
+![](static/images/GrokVoice_Imagine.png)
+
 ## Features
 
-- **Real-time Voice Conversation** - Talk naturally with Grok AI
+- **Real-time Voice Conversation** - Talk naturally with Grok AI using WebRTC
+- **Multi-Language Support** - Supports English, Japanese, Korean, Chinese, Spanish, French, and German
 - **Natural Animations** - Eye blinks, breathing, head movements & lip sync (WIP)
+- **Dynamic Backgrounds** - AI-generated backgrounds that change based on conversation topics
 - **Customizable Models** - Load your own Live2D models
-- **Live Transcripts** - See what you and the AI are saying
+- **Voice Selection** - Choose from multiple AI voices (ara, rex, sal, eve, leo)
+- **Personality Customization** - Modify AI personality and behavior via API
+- **Live Transcripts** - See what you and the AI are saying in real-time
+- **Translation Support** - Automatic translation for multi-language conversations
 
 ## Project Structure
 
@@ -64,13 +71,16 @@ pip install -r requirements.txt
 
 ### 3. Configure API Key
 
-Edit `.env` in the project root:
+> **Note:** API Pricing is $0.05 per minute connected for Grok Voice Agent and $0.02 per image generated for Grok Imagine.
+
+Create a `.env` file in the project root:
 
 ```env
 XAI_API_KEY=your_grok_api_key_here
-
 PORT=8080
 ```
+
+**Get your API key from [x.ai/api](https://x.ai/api)**
 
 ### 4. Run the Server
 
@@ -91,7 +101,7 @@ Click the microphone button 🎙️ to start talking!
 3. **Watch the avatar** - Lips sync to the AI's speech
 4. **Load custom model** - Click "Load Custom" to browse for your own Live2D models
 
-## Adding Custom Live2D Models
+## Adding Custom Live2D Models (Lipsync may not work properly on custom models)
 
 1. Place your model folder in `static/models/`
 2. Add an option to the dropdown in `static/index.html`:

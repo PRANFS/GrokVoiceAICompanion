@@ -44,3 +44,6 @@ frontend/build/
 *.tmp
 *.temp
 .cache/
+
+# Image in README
+static/images
