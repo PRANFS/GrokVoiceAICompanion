@@ -649,6 +649,15 @@ class GrokRelay:
                             logger.info(f"   Instructions: {str(session.get('instructions', ''))[:60]}...")
                     elif msg_type == "input_audio_buffer.speech_started":
                         logger.info(f"🎤 Speech detected for client #{self.connection_id}")
+                        # Barge-in: cancel any in-progress AI response immediately
+                        if self.grok_ws and self.is_connected:
+                            try:
+                                await self.grok_ws.send(json.dumps({"type": "response.cancel"}))
+                                logger.info(f"⏹️ Barge-in: cancelled AI response for client #{self.connection_id}")
+                            except Exception as e:
+                                logger.error(f"Failed to cancel response on barge-in: {e}")
+                        # Reset accumulated transcript since response is being cut off
+                        self.accumulated_transcript = ""
                     elif msg_type == "input_audio_buffer.speech_stopped":
                         logger.info(f"🔇 Speech ended for client #{self.connection_id}")
                     elif msg_type == "error":

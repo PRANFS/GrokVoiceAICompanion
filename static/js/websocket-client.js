@@ -348,6 +348,12 @@ class GrokWebSocketClient {
                 case 'input_audio_buffer.speech_started':
                     this.isUserSpeaking = true;
                     this.onSpeakingChange(true, 'user');
+                    // Barge-in: if AI is currently speaking/playing, cut it off immediately
+                    if (this.isSpeaking || this.isPlaying || this.audioQueue.length > 0) {
+                        console.log('🛑 Barge-in detected — flushing AI audio');
+                        this.flushAudioQueue();
+                        this.currentTranscript = '';
+                    }
                     break;
                     
                 case 'input_audio_buffer.speech_stopped':
