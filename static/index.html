@@ -22,6 +22,9 @@
         <!-- Background Change Notification -->
         <div id="background-notification" class="hidden"></div>
         
+        <!-- Vision Processing Indicator -->
+        <div id="vision-indicator" class="hidden"></div>
+        
         <!-- Live2D Canvas Container -->
         <div id="canvas-container">
             <canvas id="live2d-canvas"></canvas>
@@ -48,6 +51,12 @@
             </select>
             
             <button id="personality-btn" class="secondary-btn">🎭 Edit Personality</button>
+            
+            <label class="toggle-label">
+                <input type="checkbox" id="dynamic-bg-toggle" checked>
+                <span class="toggle-slider"></span>
+                🖼️ Dynamic Backgrounds
+            </label>
         </div>
 
         <!-- Personality Editor Modal -->

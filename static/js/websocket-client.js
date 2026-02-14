@@ -19,6 +19,7 @@ class GrokWebSocketClient {
         this.onSpeakingChange = options.onSpeakingChange || (() => {});
         this.onVolumeChange = options.onVolumeChange || (() => {});
         this.onBackgroundUpdate = options.onBackgroundUpdate || (() => {});
+        this.onVisionResponse = options.onVisionResponse || (() => {});
         this.onError = options.onError || (() => {});
         
         // WebSocket
@@ -35,6 +36,36 @@ class GrokWebSocketClient {
         this.playbackContext = null;
         this.audioQueue = [];
         this.isPlaying = false;
+        
+        // Webcam / Vision
+        this.videoStream = null;
+        this.videoElement = null;
+        this.visionEnabled = false; // true once webcam is acquired
+        this.visionPending = false; // debounce flag
+        this.visionSuppressing = false; // true = suppress all audio/transcripts until vision response
+        
+        // Audio hold buffer: holds AI audio between speech_stopped and user transcript
+        // so we can decide whether to play or discard (if vision trigger detected)
+        this._holdingForTranscript = false;
+        this._heldAudioChunks = [];     // ArrayBuffer[]
+        this._heldTranscriptText = '';  // accumulated assistant transcript during hold
+        this._holdTimeout = null;       // safety timeout to release held audio
+        
+        // Vision trigger phrases (lowercased substrings)
+        this.visionTriggers = [
+            'what am i holding', 'what\'m i holding',
+            'look at this', 'look at that',
+            'what is this', 'what\'s this',
+            'what is that', 'what\'s that',
+            'what do you see', 'can you see',
+            'see what i', 'see this',
+            'what do i have', 'what\'s in my hand',
+            'what color is', 'describe what',
+            'take a look', 'check this out',
+            'what are these', 'show you',
+            'i\'m showing you', 'i am showing you',
+            'do you see', 'look here'
+        ];
         
         // State
         this.state = 'disconnected';
@@ -248,6 +279,16 @@ class GrokWebSocketClient {
      */
     handleMessage(event) {
         if (event.data instanceof Blob) {
+            // Suppress audio blobs while waiting for vision response
+            if (this.visionSuppressing) {
+                console.log(`[WebSocket] Suppressing audio blob (vision pending)`);
+                return;
+            }
+            // Hold audio during transcript wait
+            if (this._holdingForTranscript) {
+                event.data.arrayBuffer().then(buf => this._heldAudioChunks.push(buf));
+                return;
+            }
             console.log(`[WebSocket] Received BLOB message, size=${event.data.size}`);
             this.handleAudioBlob(event.data);
             return;
@@ -264,6 +305,17 @@ class GrokWebSocketClient {
                     
                 case 'response.audio.delta':
                     if (message.delta) {
+                        if (this.visionSuppressing) {
+                            break;
+                        }
+                        if (this._holdingForTranscript) {
+                            // Decode and hold audio chunk
+                            const bStr = atob(message.delta);
+                            const bArr = new Uint8Array(bStr.length);
+                            for (let i = 0; i < bStr.length; i++) bArr[i] = bStr.charCodeAt(i);
+                            this._heldAudioChunks.push(bArr.buffer);
+                            break;
+                        }
                         console.log(`[WebSocket] Received audio.delta, length=${message.delta.length}`);
                         this.handleAudioDelta(message.delta);
                     }
@@ -271,13 +323,22 @@ class GrokWebSocketClient {
                     
                 case 'response.audio_transcript.delta':
                     if (message.delta) {
+                        if (this.visionSuppressing) break;
+                        if (this._holdingForTranscript) {
+                            this._heldTranscriptText += message.delta;
+                            break;
+                        }
                         this.currentTranscript += message.delta;
-                        // Pass transcript to UI for display and subtitles
                         this.onTranscript(this.currentTranscript, 'assistant', false);
                     }
                     break;
                     
                 case 'response.audio_transcript.done':
+                    if (this.visionSuppressing) {
+                        this.currentTranscript = '';
+                        break;
+                    }
+                    if (this._holdingForTranscript) break; // will be handled on release
                     const transcript = message.transcript || this.currentTranscript;
                     const englishTranslation = message.english_translation || null;
                     this.onTranscript(transcript, 'assistant', true, englishTranslation);
@@ -292,19 +353,28 @@ class GrokWebSocketClient {
                 case 'input_audio_buffer.speech_stopped':
                     this.isUserSpeaking = false;
                     this.onSpeakingChange(false, 'user');
+                    // Start holding AI audio until we get the user transcript
+                    // so we can check for vision triggers before any audio plays
+                    this._startHoldingAudio();
                     break;
                     
                 case 'response.created':
+                    if (this.visionSuppressing) break;
+                    if (this._holdingForTranscript) break; // don't show speaking yet
                     this.setSpeaking(true);
                     break;
                     
                 case 'response.done':
+                    if (this.visionSuppressing) break;
+                    if (this._holdingForTranscript) break;
                     this.setSpeaking(false);
                     break;
                     
                 case 'conversation.item.input_audio_transcription.completed':
                     if (message.transcript) {
                         this.onTranscript(message.transcript, 'user', true);
+                        // Now decide: vision trigger or normal playback?
+                        this._onUserTranscriptReceived(message.transcript);
                     }
                     break;
                     
@@ -318,6 +388,16 @@ class GrokWebSocketClient {
                     if (message.image_url) {
                         this.onBackgroundUpdate(message.image_url, message.topic);
                     }
+                    break;
+                    
+                case 'vision.response':
+                    console.log('👁️ Vision response:', message.text?.substring(0, 80));
+                    this.visionSuppressing = false;
+                    this.visionPending = false;
+                    this.onVisionResponse(message.text);
+                    // Turn off the webcam after the response — it will be
+                    // re-initialized on the next vision trigger if needed.
+                    this.stopWebcam();
                     break;
             }
         } catch (error) {
@@ -549,6 +629,259 @@ class GrokWebSocketClient {
         return true;
     }
     
+    // ─── Audio Hold Buffer (vision trigger detection) ─────────────────
+    
+    /**
+     * Start holding AI audio after user finishes speaking.
+     * All AI audio/transcripts are buffered until the user's transcript
+     * arrives so we can check for vision triggers BEFORE audio plays.
+     */
+    _startHoldingAudio() {
+        this._holdingForTranscript = true;
+        this._heldAudioChunks = [];
+        this._heldTranscriptText = '';
+        
+        // Safety timeout: if user transcript never arrives within 3s,
+        // release the buffer anyway so audio isn't lost
+        if (this._holdTimeout) clearTimeout(this._holdTimeout);
+        this._holdTimeout = setTimeout(() => {
+            if (this._holdingForTranscript) {
+                console.log('[WebSocket] Hold timeout — releasing buffered audio');
+                this._releaseHeldAudio();
+            }
+        }, 3000);
+        
+        console.log('[WebSocket] Holding AI audio until user transcript arrives');
+    }
+    
+    /**
+     * Called when the user's final transcript arrives.
+     * Decides whether to play or discard the held audio.
+     */
+    _onUserTranscriptReceived(text) {
+        if (!this._holdingForTranscript) return;
+        
+        if (this._holdTimeout) {
+            clearTimeout(this._holdTimeout);
+            this._holdTimeout = null;
+        }
+        
+        if (this.containsVisionTrigger(text)) {
+            // Vision trigger detected — discard all held audio
+            console.log(`👁️ Vision trigger in held audio — discarding ${this._heldAudioChunks.length} chunks`);
+            this._holdingForTranscript = false;
+            this._heldAudioChunks = [];
+            this._heldTranscriptText = '';
+            this.currentTranscript = '';
+            
+            // Set suppression for any remaining chunks still in-flight
+            this.visionSuppressing = true;
+            // NOTE: Do NOT set visionPending here — sendVisionQuery() manages
+            // that flag itself, and setting it early causes the method to
+            // bail out immediately ("already pending") without ever sending.
+            this.flushAudioQueue();
+            
+            // Send the vision query (handle failure to avoid permanent suppression)
+            this.sendVisionQuery(text).then(success => {
+                if (!success) {
+                    console.log('⚠️ Vision query failed — resuming normal audio');
+                    this.visionSuppressing = false;
+                    this.visionPending = false;
+                }
+            });
+        } else {
+            // Normal speech — release the held audio for playback
+            this._releaseHeldAudio();
+        }
+    }
+    
+    /**
+     * Release all held audio chunks into the normal playback queue.
+     */
+    _releaseHeldAudio() {
+        this._holdingForTranscript = false;
+        
+        if (this._holdTimeout) {
+            clearTimeout(this._holdTimeout);
+            this._holdTimeout = null;
+        }
+        
+        const chunks = this._heldAudioChunks;
+        const heldText = this._heldTranscriptText;
+        this._heldAudioChunks = [];
+        this._heldTranscriptText = '';
+        
+        console.log(`[WebSocket] Releasing ${chunks.length} held audio chunks`);
+        
+        // Show speaking state now
+        if (chunks.length > 0) {
+            this.setSpeaking(true);
+        }
+        
+        // Replay held transcript
+        if (heldText) {
+            this.currentTranscript = heldText;
+            this.onTranscript(heldText, 'assistant', false);
+        }
+        
+        // Queue all held audio for playback
+        for (const chunk of chunks) {
+            this.queueAudioPlayback(chunk);
+        }
+    }
+    
+    // ─── Webcam / Vision Methods ────────────────────────────────────────
+    
+    /**
+     * Initialize webcam for vision queries.
+     * Creates a hidden <video> element and starts the camera stream.
+     */
+    async initWebcam() {
+        if (this.visionEnabled) return true;
+        
+        try {
+            this.videoStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+            
+            // Create hidden video element for frame capture
+            this.videoElement = document.createElement('video');
+            this.videoElement.srcObject = this.videoStream;
+            this.videoElement.setAttribute('playsinline', '');
+            this.videoElement.muted = true;
+            await this.videoElement.play();
+            
+            this.visionEnabled = true;
+            console.log('📷 Webcam initialized for vision');
+            return true;
+        } catch (err) {
+            console.error('❌ Webcam access denied or unavailable:', err);
+            this.onError({ type: 'webcam', error: err });
+            return false;
+        }
+    }
+    
+    /**
+     * Stop webcam stream.
+     */
+    stopWebcam() {
+        if (this.videoStream) {
+            this.videoStream.getTracks().forEach(t => t.stop());
+            this.videoStream = null;
+        }
+        if (this.videoElement) {
+            this.videoElement.srcObject = null;
+            this.videoElement = null;
+        }
+        this.visionEnabled = false;
+        console.log('📷 Webcam stopped');
+    }
+    
+    /**
+     * Capture a JPEG frame from the webcam and return base64 (no data-url prefix).
+     */
+    captureFrame() {
+        if (!this.videoElement || !this.visionEnabled) return null;
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = this.videoElement.videoWidth || 1280;
+        canvas.height = this.videoElement.videoHeight || 720;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
+        
+        // Return base64 without the data:image/jpeg;base64, prefix
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        return dataUrl.split(',')[1];
+    }
+    
+    /**
+     * Check if a transcript contains a vision trigger phrase.
+     */
+    containsVisionTrigger(text) {
+        const lower = text.toLowerCase();
+        return this.visionTriggers.some(trigger => lower.includes(trigger));
+    }
+    
+    /**
+     * Send a vision query: capture frame + send to backend.
+     * @param {string} query - The user's spoken query text
+     */
+    async sendVisionQuery(query) {
+        if (this.visionPending) {
+            console.log('👁️ Vision query already pending, skipping');
+            return false;
+        }
+        
+        // Initialise webcam on first use
+        if (!this.visionEnabled) {
+            const ok = await this.initWebcam();
+            if (!ok) return false;
+            // Small delay for camera to warm up
+            await new Promise(r => setTimeout(r, 500));
+        }
+        
+        const frame = this.captureFrame();
+        if (!frame) {
+            console.error('❌ Failed to capture webcam frame');
+            return false;
+        }
+        
+        this.visionPending = true;
+        this.visionSuppressing = true;
+        
+        // Immediately flush any audio that's already queued/playing from the
+        // hallucinated response the Realtime API started before we could cancel
+        this.flushAudioQueue();
+        
+        console.log(`👁️ Sending vision query: "${query}" (image size: ${Math.round(frame.length / 1024)}KB)`);
+        
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'vision.query',
+                image: frame,
+                query: query
+            }));
+            return true;
+        }
+        
+        this.visionPending = false;
+        return false;
+    }
+    
+    /**
+     * Flush all queued/playing audio immediately.
+     * Used when a vision query is triggered to silence the hallucinated response.
+     */
+    flushAudioQueue() {
+        this.audioQueue = [];
+        this.isPlaying = false;
+        this.currentTranscript = '';
+        
+        // Close and recreate the playback context to stop any currently-playing buffer
+        if (this.playbackContext) {
+            this.playbackContext.close().catch(() => {});
+            this.playbackContext = null;
+        }
+        
+        // Reset lip sync
+        this.onVolumeChange(0, 'assistant', null);
+        this.setSpeaking(false);
+        console.log('🔇 Flushed audio queue (vision query)');
+    }
+    
+    /**
+     * Toggle dynamic background generation on/off.
+     */
+    sendDynamicBgToggle(enabled) {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                type: 'dynamic_bg.toggle',
+                enabled: enabled
+            }));
+            console.log(`🖼️ Dynamic backgrounds ${enabled ? 'enabled' : 'disabled'}`);
+        }
+    }
+    
     /**
      * Set speaking state
      */
@@ -570,16 +903,27 @@ class GrokWebSocketClient {
      */
     cleanup() {
         this.stopAudioCapture();
+        this.stopWebcam();
         
         if (this.playbackContext) {
             this.playbackContext.close();
             this.playbackContext = null;
         }
         
+        if (this._holdTimeout) {
+            clearTimeout(this._holdTimeout);
+            this._holdTimeout = null;
+        }
+        
         this.audioQueue = [];
         this.isPlaying = false;
         this.isSpeaking = false;
         this.currentVolume = 0;
+        this.visionPending = false;
+        this.visionSuppressing = false;
+        this._holdingForTranscript = false;
+        this._heldAudioChunks = [];
+        this._heldTranscriptText = '';
     }
     
     /**

@@ -43,6 +43,10 @@ BASE_INSTRUCTIONS = (
     "You are NOT a professional assistant. You are my loving AI girlfriend. "
     "To enhance realism and cuteness, use auditory cues such as [giggle], [sigh], and [laugh] in your speech to express your emotions whenever necessary."
     "Never break character. Always respond as my affectionate waifu."
+    "\n\nVISION CAPABILITIES: You are connected to the user's webcam and can see them "
+    "through it when they ask you to look at something. When the user asks you to "
+    "look at something or asks what they are holding, you CAN see them. Never say "
+    "you cannot see — you have full vision access. Respond naturally about what you see."
 )
 
 # Language configurations
@@ -174,6 +178,9 @@ load_personality_settings()
 # Track conversation context for background generation
 conversation_topics = {}  # connection_id -> {"current_topic": str, "last_background_url": str}
 
+# Track dynamic background toggle per connection
+dynamic_bg_enabled = {}  # connection_id -> bool (default True)
+
 
 async def analyze_topic_change(connection_id: int, transcript: str) -> tuple[bool, str]:
     """
@@ -297,10 +304,68 @@ High quality, detailed, vibrant colors, cinematic lighting."""
     return None
 
 
+async def analyze_vision_query(image_base64: str, query: str, instructions: str = "") -> str:
+    """
+    Send an image + text query to grok-4-1-fast-non-reasoning via /v1/chat/completions.
+    Returns the text response.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            messages = []
+            if instructions:
+                messages.append({"role": "system", "content": instructions})
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{image_base64}",
+                            "detail": "auto"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": query
+                    }
+                ]
+            })
+
+            response = await client.post(
+                GROK_CHAT_URL,
+                headers={
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "grok-4-1-fast-non-reasoning",
+                    "messages": messages,
+                    "temperature": 0.7
+                }
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                logger.info(f"👁️ Vision response: {content[:100]}...")
+                return content
+            else:
+                logger.error(f"❌ Vision API error: {response.status_code} - {response.text}")
+                return "Sorry, I couldn't analyze the image right now."
+
+    except Exception as e:
+        logger.error(f"Error in vision query: {e}")
+        return "Sorry, something went wrong while looking at the image."
+
+
 async def update_background_if_needed(connection_id: int, transcript: str, client_ws: WebSocket):
     """
     Check if topic changed and generate new background if needed.
     """
+    # Check if dynamic backgrounds are enabled for this connection
+    if not dynamic_bg_enabled.get(connection_id, True):
+        return
+
     has_changed, new_topic = await analyze_topic_change(connection_id, transcript)
     
     if has_changed and new_topic:
@@ -478,6 +543,75 @@ class GrokRelay:
                         # Re-send session update with new language
                         await self.send_session_update()
                     return
+
+                # Handle dynamic background toggle
+                if message.get("type") == "dynamic_bg.toggle":
+                    enabled = message.get("enabled", True)
+                    dynamic_bg_enabled[self.connection_id] = enabled
+                    logger.info(f"🖼️ Dynamic backgrounds {'enabled' if enabled else 'disabled'} for client #{self.connection_id}")
+                    return
+
+                # Handle vision query
+                if message.get("type") == "vision.query":
+                    image_b64 = message.get("image", "")
+                    query_text = message.get("query", "What do you see?")
+                    logger.info(f"👁️ Vision query from client #{self.connection_id}: {query_text}")
+
+                    # 1) Cancel any in-progress realtime response so the AI
+                    #    doesn't blurt out "I can't see you" while we process
+                    if self.grok_ws and self.is_connected:
+                        await self.grok_ws.send(json.dumps({
+                            "type": "response.cancel"
+                        }))
+                        logger.info(f"⏹️ Cancelled in-progress response for client #{self.connection_id}")
+
+                    # Build system instructions for vision (keep personality)
+                    lang_config = LANGUAGE_CONFIG.get(self.language, LANGUAGE_CONFIG['en'])
+                    vision_instructions = (
+                        BASE_INSTRUCTIONS
+                        + lang_config.get('instruction', '')
+                        + "\n\nThe user is showing you something via their webcam. "
+                        "Describe what you see and respond naturally in character. Keep your answer concise (2-3 sentences)."
+                    )
+
+                    # 2) Call the vision side-channel (await the full result)
+                    vision_response = await analyze_vision_query(image_b64, query_text, vision_instructions)
+
+                    # Notify the client that vision analysis is done
+                    await self.client_ws.send_json({
+                        "type": "vision.response",
+                        "text": vision_response
+                    })
+
+                    # 3) Inject the vision response into the realtime conversation
+                    #    so the avatar speaks it aloud
+                    if self.grok_ws and self.is_connected:
+                        # Add a user context message about what they showed
+                        await self.grok_ws.send(json.dumps({
+                            "type": "conversation.item.create",
+                            "item": {
+                                "type": "message",
+                                "role": "user",
+                                "content": [{
+                                    "type": "input_text",
+                                    "text": f"[The user showed you an image via webcam and asked: \"{query_text}\"]"
+                                }]
+                            }
+                        }))
+                        # Trigger a response with the vision analysis baked in
+                        await self.grok_ws.send(json.dumps({
+                            "type": "response.create",
+                            "response": {
+                                "instructions": (
+                                    f"The user just showed you something on their webcam. "
+                                    f"Based on the image analysis, here is what you see: {vision_response}\n\n"
+                                    f"Respond naturally as if you can see it yourself. Stay in character. "
+                                    f"Keep it short and conversational (2-3 sentences max)."
+                                )
+                            }
+                        }))
+                        logger.info(f"📤 Injected vision response into realtime conversation for client #{self.connection_id}")
+                    return
                 
                 await self.grok_ws.send(data)
                 
@@ -579,6 +713,8 @@ class GrokRelay:
         # Clean up topic tracking for this connection
         if self.connection_id in conversation_topics:
             del conversation_topics[self.connection_id]
+        if self.connection_id in dynamic_bg_enabled:
+            del dynamic_bg_enabled[self.connection_id]
 
 
 @app.websocket("/ws")

@@ -11,6 +11,7 @@ let isSessionActive = false;
 let lipSyncValue = 0;
 let selectedLanguage = 'en';
 let currentBackgroundUrl = null;
+let dynamicBgEnabled = true;
 
 // DOM Elements
 const micButton = document.getElementById('mic-button');
@@ -26,6 +27,8 @@ const volumeBars = document.querySelectorAll('.volume-bar');
 const subtitleDisplay = document.getElementById('subtitle-display');
 const subtitleText = document.getElementById('subtitle-text');
 const dynamicBackground = document.getElementById('dynamic-background');
+const dynamicBgToggle = document.getElementById('dynamic-bg-toggle');
+const visionIndicator = document.getElementById('vision-indicator');
 
 // Personality Modal Elements
 const personalityBtn = document.getElementById('personality-btn');
@@ -78,6 +81,13 @@ async function init() {
         onTranscript: (text, role, isFinal, englishText = null) => {
             if (isFinal) {
                 addTranscript(text, role, englishText);
+                
+                // Vision trigger detection is handled inside the WebSocket client
+                // (via _onUserTranscriptReceived) so the audio hold buffer works.
+                // Show the indicator if a vision query was just triggered.
+                if (role === 'user' && wsClient.visionPending) {
+                    showVisionIndicator('Analyzing...');
+                }
             } else {
                 updateCurrentTranscript(text);
             }
@@ -116,6 +126,14 @@ async function init() {
         onBackgroundUpdate: (imageUrl, topic) => {
             console.log(`[App] Background update: ${topic}`);
             updateBackground(imageUrl, topic);
+        },
+        
+        onVisionResponse: (text) => {
+            console.log(`[App] Vision response: ${text?.substring(0, 80)}`);
+            hideVisionIndicator();
+            // The avatar will speak the response via the realtime API injection.
+            // Optionally show it in the transcript too.
+            addTranscript(text, 'assistant');
         },
         
         onError: (err) => {
@@ -189,6 +207,17 @@ function setupEventListeners() {
     cancelPersonalityBtn.addEventListener('click', closePersonalityModal);
     savePersonalityBtn.addEventListener('click', savePersonality);
     
+    // Dynamic background toggle
+    if (dynamicBgToggle) {
+        dynamicBgToggle.addEventListener('change', () => {
+            dynamicBgEnabled = dynamicBgToggle.checked;
+            console.log(`🖼️ Dynamic backgrounds: ${dynamicBgEnabled ? 'ON' : 'OFF'}`);
+            if (isSessionActive && wsClient) {
+                wsClient.sendDynamicBgToggle(dynamicBgEnabled);
+            }
+        });
+    }
+    
     // Close modal when clicking outside
     personalityModal.addEventListener('click', (e) => {
         if (e.target === personalityModal) {
@@ -225,6 +254,9 @@ async function startConversation() {
         const success = await wsClient.startAudioCapture();
         if (success) {
             isSessionActive = true;
+            
+            // Sync dynamic background toggle state to backend
+            wsClient.sendDynamicBgToggle(dynamicBgEnabled);
             micButton.classList.remove('inactive');
             micButton.classList.add('active');
             micButton.textContent = '🎤';
@@ -393,6 +425,27 @@ function updateCurrentTranscript(text) {
 function clearTranscripts() {
     transcriptContent.innerHTML = '';
     transcriptPanel.classList.add('hidden');
+}
+
+/**
+ * Show vision processing indicator
+ */
+function showVisionIndicator(text) {
+    if (visionIndicator) {
+        visionIndicator.textContent = `👁️ ${text}`;
+        visionIndicator.classList.remove('hidden');
+        visionIndicator.classList.add('show');
+    }
+}
+
+/**
+ * Hide vision processing indicator
+ */
+function hideVisionIndicator() {
+    if (visionIndicator) {
+        visionIndicator.classList.remove('show');
+        setTimeout(() => visionIndicator.classList.add('hidden'), 500);
+    }
 }
 
 /**

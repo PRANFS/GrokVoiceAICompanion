@@ -9,9 +9,10 @@ AI Companion powered by xAI's Grok Voice Agent API with customizable Live2D avat
 ## Features
 
 - **Real-time Voice Conversation** - Talk naturally with Grok AI using WebRTC
-- **Multi-Language Support** - Supports English, Japanese, Korean, Chinese, Spanish, French, and German
 - **Natural Animations** - Eye blinks, breathing, head movements & lip sync (WIP)
 - **Dynamic Backgrounds** - AI-generated backgrounds that change based on conversation topics
+- **Vison Capabilities** - AI Companion can see your webcam when you ask it to, and respond to visual cues
+- **Multi-Language Support** - Supports English, Japanese, Korean, Chinese, Spanish, French, and German
 - **Customizable Models** - Load your own Live2D models
 - **Voice Selection** - Choose from multiple AI voices (ara, rex, sal, eve, leo)
 - **Personality Customization** - Modify AI personality and behavior via API
@@ -71,7 +72,7 @@ pip install -r requirements.txt
 
 ### 3. Configure API Key
 
-> **Note:** API Pricing is $0.05 per minute connected for Grok Voice Agent and $0.02 per image generated for Grok Imagine.
+> **Note:** API Pricing is $0.05 per minute connected for Grok Voice Agent and $0.02 per image generated for Grok Imagine.  
 
 Create a `.env` file in the project root:
 
@@ -100,6 +101,8 @@ Click the microphone button 🎙️ to start talking!
 2. **Talk** - Speak naturally, the AI will respond with voice
 3. **Watch the avatar** - Lips sync to the AI's speech
 4. **Load custom model** - Click "Load Custom" to browse for your own Live2D models
+5. **Change voice & edits personality** - Use the dropdowns to select different voices and modify personality traits
+6. **Toggle dynamic background** - Click the dynamic background toggle to turn on/off AI-generated backgrounds that change based on conversation topics
 
 ## Adding Custom Live2D Models (Lipsync may not work properly on custom models)
 
