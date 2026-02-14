@@ -384,6 +384,12 @@ function showBackgroundNotification(topic) {
 function addTranscript(text, role, englishText = null) {
     transcriptPanel.classList.remove('hidden');
     
+    // Remove the streaming transcript element to avoid duplication
+    if (role === 'assistant') {
+        const current = transcriptContent.querySelector('.current-transcript');
+        if (current) current.remove();
+    }
+    
     const line = document.createElement('p');
     line.className = `transcript-line ${role}`;
     
