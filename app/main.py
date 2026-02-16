@@ -284,7 +284,7 @@ High quality, detailed, vibrant colors, cinematic lighting."""
                     "prompt": prompt,
                     "n": 1,
                     "aspect_ratio": "16:9",
-                    "resolution": "1k",
+                    "resolution": "2k",
                     "response_format": "url"
                 }
             )
