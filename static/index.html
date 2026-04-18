@@ -35,6 +35,7 @@
             <label>Select Avatar</label>
             <select id="model-dropdown">
                 <option value="/static/models/kei_vowels_pro/runtime/kei_vowels_pro.model3.json">Kei Vowels Pro</option>
+                <option value="/static/models/hiyori/hiyori_pro_t11.model3.json">Hiyori Momose</option>
             </select>
             <button id="load-custom-btn" class="secondary-btn">📁 Load Custom</button>
             <input type="file" id="custom-model-input" accept=".model3.json" style="display: none;">
@@ -57,6 +58,26 @@
                 <span class="toggle-slider"></span>
                 🖼️ Dynamic Backgrounds
             </label>
+            
+            <!-- Character Generator Section -->
+            <div class="panel-divider"></div>
+            <label>Generate Character</label>
+            <div id="character-generator">
+                <textarea id="char-prompt-input" rows="3" placeholder="Describe your character... e.g. 'cyberpunk girl with pink hair and neon outfit'"></textarea>
+                <label class="toggle-label quality-toggle">
+                    <input type="checkbox" id="high-quality-toggle" checked>
+                    <span class="toggle-slider"></span>
+                    🎨 Generate reference artwork (for gallery)
+                </label>
+                <button id="generate-char-btn" class="primary-btn">✨ Generate</button>
+                <div id="gen-progress" class="hidden">
+                    <div class="gen-progress-bar">
+                        <div class="gen-progress-fill"></div>
+                    </div>
+                    <p id="gen-progress-text">Starting...</p>
+                </div>
+            </div>
+            <button id="gallery-btn" class="secondary-btn">🖼️ Character Gallery</button>
         </div>
 
         <!-- Personality Editor Modal -->
@@ -82,6 +103,25 @@
                 <div class="modal-footer">
                     <button id="cancel-personality-btn" class="secondary-btn">Cancel</button>
                     <button id="save-personality-btn" class="primary-btn">💾 Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Character Gallery Modal -->
+        <div id="gallery-modal" class="modal hidden">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h2>🖼️ Character Gallery</h2>
+                    <button id="close-gallery-btn" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="gallery-grid" class="gallery-grid">
+                        <!-- Populated dynamically -->
+                    </div>
+                    <div id="gallery-empty" class="gallery-empty hidden">
+                        <p>No generated characters yet.</p>
+                        <p>Use the "Generate Character" section to create your first one!</p>
+                    </div>
                 </div>
             </div>
         </div>

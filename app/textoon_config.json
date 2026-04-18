@@ -1,0 +1,113 @@
+{
+    "model_name": "Hiyori",
+    "model_source": "Live2D Pro Sample Data - Hiyori Momose (hiyori_pro_t11)",
+    "license": "Live2D Free Material License Agreement",
+    "atlas_size": 2048,
+    "texture_count": 2,
+
+    "_hsv_note": "PIL HSV: H 0-255 (maps 0-360 deg), S 0-255, V 0-255. Regions processed in priority order. Hue wrapping for red uses h_min_alt..255 OR 0..h_max. Tune these by sampling pixel HSV values from texture_00/01.",
+
+    "regions": {
+        "eye_iris": {
+            "description": "Eye iris (blue-teal in original Hiyori Pro, only on texture_00)",
+            "default_rgb": [65, 69, 88],
+            "hsv_filter": {
+                "h_min": 148, "h_max": 175,
+                "s_min": 40, "s_max": 255,
+                "v_min": 40, "v_max": 255
+            },
+            "priority": 0,
+            "min_area": 50,
+            "texture_only": [0]
+        },
+        "ribbon": {
+            "description": "Red ribbon/bow and hair accessories",
+            "default_rgb": [220, 68, 80],
+            "hsv_filter": {
+                "wrap_hue": true,
+                "h_min_alt": 238,
+                "h_min": 0, "h_max": 10,
+                "s_min": 80, "s_max": 255,
+                "v_min": 80, "v_max": 255
+            },
+            "priority": 1,
+            "min_area": 100
+        },
+        "jacket": {
+            "description": "Beige/cream cardigan jacket - the main top garment. Claimed before hair/skin by priority. V_max=255 to capture all bright jacket pixels on both textures; actual skin (S<25) stays in the skin region.",
+            "default_rgb": [190, 170, 148],
+            "hsv_filter": {
+                "h_min": 8, "h_max": 28,
+                "s_min": 25, "s_max": 85,
+                "v_min": 140, "v_max": 255
+            },
+            "priority": 2,
+            "min_area": 200
+        },
+        "hair": {
+            "description": "All hair parts (bangs, sides, back, ahoge) - dark brown in original. S_min lowered to 28 to capture hair shadows.",
+            "default_rgb": [91, 58, 46],
+            "hsv_filter": {
+                "h_min": 4, "h_max": 28,
+                "s_min": 28, "s_max": 255,
+                "v_min": 25, "v_max": 185
+            },
+            "priority": 3,
+            "min_area": 200
+        },
+        "skin": {
+            "description": "Skin (face, neck, arms, hands, legs) - light peach in original. V_min lowered to 50 to capture skin shadows.",
+            "default_rgb": [248, 225, 210],
+            "hsv_filter": {
+                "h_min": 5, "h_max": 32,
+                "s_min": 12, "s_max": 85,
+                "v_min": 50, "v_max": 255
+            },
+            "priority": 4,
+            "min_area": 200
+        },
+        "clothing_dark": {
+            "description": "Navy/dark blue parts (sailor collar, skirt, accents)",
+            "default_rgb": [55, 72, 108],
+            "hsv_filter": {
+                "h_min": 135, "h_max": 178,
+                "s_min": 30, "s_max": 220,
+                "v_min": 20, "v_max": 160
+            },
+            "priority": 5,
+            "min_area": 200
+        },
+        "shoes": {
+            "description": "Brown shoes/loafers",
+            "default_rgb": [78, 52, 38],
+            "hsv_filter": {
+                "h_min": 4, "h_max": 28,
+                "s_min": 50, "s_max": 255,
+                "v_min": 8, "v_max": 50
+            },
+            "priority": 6,
+            "min_area": 100
+        },
+        "clothing_white": {
+            "description": "White parts of school uniform top",
+            "default_rgb": [245, 242, 248],
+            "hsv_filter": {
+                "h_min": 0, "h_max": 255,
+                "s_min": 0, "s_max": 28,
+                "v_min": 185, "v_max": 255
+            },
+            "priority": 7,
+            "min_area": 500
+        }
+    },
+
+    "attribute_to_region_map": {
+        "hair_color": "hair",
+        "eye_color": "eye_iris",
+        "skin_tone": "skin",
+        "top_color": "jacket",
+        "bottom_color": "clothing_dark",
+        "accent_color": "ribbon",
+        "shoe_color": "shoes"
+    }
+}

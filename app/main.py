@@ -14,12 +14,21 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+import re
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 import websockets
 from deep_translator import GoogleTranslator
+
+# Character generation
+from app.character_generator import (
+    check_hiyori_model,
+    generate_character,
+    list_generated_models,
+    delete_generated_model,
+)
 
 # Grok Imagine API configuration
 GROK_IMAGINE_URL = "https://api.x.ai/v1/images/generations"
@@ -175,11 +184,26 @@ def save_personality_settings():
 # Load settings on startup
 load_personality_settings()
 
+# Check Hiyori model on startup
+_hiyori_check = check_hiyori_model()
+hiyori_available = _hiyori_check["available"]
+if hiyori_available:
+    logger.info("✅ Hiyori model found - character generation ready")
+else:
+    logger.warning(f"⚠️ Hiyori model not found (missing: {_hiyori_check['missing']}). "
+                   f"Character generation disabled. See SETUP_HIYORI.md")
+
 # Track conversation context for background generation
 conversation_topics = {}  # connection_id -> {"current_topic": str, "last_background_url": str}
 
 # Track dynamic background toggle per connection
 dynamic_bg_enabled = {}  # connection_id -> bool (default True)
+
+# Emotion detection regex - matches [happy], [sad], [excited], etc.
+EMOTION_PATTERN = re.compile(r'\[(happy|sad|excited|angry|surprised|love|shy|thinking|neutral|laugh|cry|scared|confused|proud|disgusted)\]', re.IGNORECASE)
+
+# Hiyori model status (checked at startup)
+hiyori_available = False
 
 
 async def analyze_topic_change(connection_id: int, transcript: str) -> tuple[bool, str]:
@@ -465,6 +489,16 @@ class GrokRelay:
         lang_config = LANGUAGE_CONFIG.get(self.language, LANGUAGE_CONFIG['en'])
         instructions = BASE_INSTRUCTIONS + lang_config.get('instruction', '')
         
+        # Add emotion tagging instruction
+        instructions += (
+            "\n\nEMOTION EXPRESSION: You MUST prefix EVERY spoken response with an emotion tag "
+            "in square brackets to express your current feeling. Choose from: "
+            "[happy], [sad], [excited], [angry], [surprised], [love], [shy], [thinking], "
+            "[neutral], [laugh], [cry], [scared], [confused], [proud], [disgusted]. "
+            "Example: '[happy] Oh that sounds so fun!' or '[love] I missed you so much!'. "
+            "Always include exactly one emotion tag at the very start of each response."
+        )
+        
         logger.info(f"🌐 Configuring session for language: {lang_config['name']}")
         
         # Format voice name for API (capitalize first letter)
@@ -656,8 +690,9 @@ class GrokRelay:
                                 logger.info(f"⏹️ Barge-in: cancelled AI response for client #{self.connection_id}")
                             except Exception as e:
                                 logger.error(f"Failed to cancel response on barge-in: {e}")
-                        # Reset accumulated transcript since response is being cut off
+                        # Reset accumulated transcript and emotion flag
                         self.accumulated_transcript = ""
+                        self._emotion_sent_for_response = False
                     elif msg_type == "input_audio_buffer.speech_stopped":
                         logger.info(f"🔇 Speech ended for client #{self.connection_id}")
                     elif msg_type == "error":
@@ -666,6 +701,17 @@ class GrokRelay:
                         if delta := data.get("delta"):
                             print(delta, end="", flush=True)
                             self.accumulated_transcript += delta
+                            
+                            # Detect emotion tags in the accumulated transcript
+                            emotion_match = EMOTION_PATTERN.search(self.accumulated_transcript)
+                            if emotion_match and not getattr(self, '_emotion_sent_for_response', False):
+                                emotion = emotion_match.group(1).lower()
+                                self._emotion_sent_for_response = True
+                                await self.client_ws.send_json({
+                                    "type": "emotion.detected",
+                                    "emotion": emotion
+                                })
+                                logger.info(f"🎭 Emotion detected: {emotion}")
                     elif msg_type == "response.audio_transcript.done":
                         print()  # Newline after transcript
                         
@@ -677,6 +723,7 @@ class GrokRelay:
                             logger.info(f"🌐 Translated: {transcript[:30]}... -> {english_translation[:30]}...")
                     elif msg_type == "response.done":
                         logger.info(f"✅ Response complete for client #{self.connection_id}")
+                        self._emotion_sent_for_response = False  # Reset for next response
                         
                         # Check for topic change and update background (non-blocking)
                         if self.accumulated_transcript:
@@ -828,6 +875,80 @@ async def update_personality(request_data: dict):
         "voice": VOICE,
         "instructions": BASE_INSTRUCTIONS
     })
+
+
+@app.get("/model-status")
+async def model_status():
+    """Check if Hiyori base model is available for character generation"""
+    check = check_hiyori_model()
+    return JSONResponse({
+        "available": check["available"],
+        "missing": check["missing"]
+    })
+
+
+@app.post("/generate-character")
+async def generate_character_endpoint(request: Request):
+    """Generate a new character from a text prompt"""
+    try:
+        body = await request.json()
+        prompt = body.get("prompt", "").strip()
+        quality = body.get("quality", "high")  # "high" (+ reference artwork) or "standard" (color transfer only)
+        
+        if not prompt:
+            return JSONResponse({"error": "Prompt is required"}, status_code=400)
+        
+        if quality not in ("high", "standard"):
+            quality = "high"
+        
+        if not XAI_API_KEY:
+            return JSONResponse({"error": "API key not configured"}, status_code=500)
+        
+        # Check Hiyori model is present
+        check = check_hiyori_model()
+        if not check["available"]:
+            return JSONResponse({
+                "error": "Hiyori model not found. See SETUP_HIYORI.md for download instructions.",
+                "missing": check["missing"]
+            }, status_code=503)
+        
+        logger.info(f"🎭 Character generation requested (quality={quality}): {prompt[:80]}...")
+        
+        # Run the generation pipeline
+        metadata = await generate_character(prompt, XAI_API_KEY, quality=quality)
+        
+        return JSONResponse({
+            "success": True,
+            "model": metadata
+        })
+        
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    except FileNotFoundError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    except Exception as e:
+        logger.error(f"❌ Character generation error: {e}")
+        return JSONResponse({"error": f"Generation failed: {str(e)}"}, status_code=500)
+
+
+@app.get("/generated-models")
+async def get_generated_models():
+    """List all generated character models"""
+    models = list_generated_models()
+    return JSONResponse({"models": models})
+
+
+@app.delete("/generated-models/{model_id}")
+async def delete_model(model_id: str):
+    """Delete a generated character model"""
+    if not model_id.startswith("generated_"):
+        return JSONResponse({"error": "Invalid model ID"}, status_code=400)
+    
+    success = delete_generated_model(model_id)
+    if success:
+        return JSONResponse({"success": True})
+    else:
+        return JSONResponse({"error": "Model not found"}, status_code=404)
 
 
 @app.get("/")

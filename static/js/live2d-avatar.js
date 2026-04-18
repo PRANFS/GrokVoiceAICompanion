@@ -64,6 +64,33 @@ class Live2DAvatar {
         this.blinkTimer = null;
         this.animationFrame = null;
         
+        // Model type detection
+        this.modelType = 'vowel';  // 'vowel' (kei_vowels_pro) or 'standard' (hiyori/generated)
+        
+        // Emotion state
+        this.currentEmotion = 'neutral';
+        this.emotionIntensity = 0;
+        this.emotionDecayTimer = null;
+        
+        // Emotion parameter mappings (how each emotion affects model params)
+        this.emotionMap = {
+            'happy':     { headY: 5,  headZ: 3,  mouthForm: 0.8, eyeOpen: 1.0, bodyX: 3,  armPose: 'B' },
+            'excited':   { headY: 8,  headZ: 5,  mouthForm: 1.0, eyeOpen: 1.2, bodyX: 5,  armPose: 'B' },
+            'love':      { headY: -3, headZ: 5,  mouthForm: 0.7, eyeOpen: 0.7, bodyX: 2,  armPose: 'B' },
+            'shy':       { headY: -5, headZ: -5, mouthForm: 0.3, eyeOpen: 0.6, bodyX: -3, armPose: 'A' },
+            'sad':       { headY: -8, headZ: 0,  mouthForm: -0.5, eyeOpen: 0.5, bodyX: -2, armPose: 'A' },
+            'cry':       { headY: -10,headZ: 0,  mouthForm: -0.8, eyeOpen: 0.3, bodyX: -3, armPose: 'B' },
+            'angry':     { headY: 3,  headZ: 0,  mouthForm: -0.3, eyeOpen: 1.0, bodyX: 0,  armPose: 'B' },
+            'surprised': { headY: 5,  headZ: 0,  mouthForm: 0.0, eyeOpen: 1.3, bodyX: 2,  armPose: 'B' },
+            'scared':    { headY: -5, headZ: -3, mouthForm: -0.2, eyeOpen: 1.2, bodyX: -4, armPose: 'B' },
+            'thinking':  { headY: 5,  headZ: 5,  mouthForm: 0.2, eyeOpen: 0.8, bodyX: 0,  armPose: 'B' },
+            'confused':  { headY: 3,  headZ: -8, mouthForm: 0.0, eyeOpen: 0.9, bodyX: -2, armPose: 'A' },
+            'proud':     { headY: 8,  headZ: 2,  mouthForm: 0.6, eyeOpen: 0.9, bodyX: 3,  armPose: 'B' },
+            'disgusted': { headY: -3, headZ: -3, mouthForm: -0.6, eyeOpen: 0.7, bodyX: -2, armPose: 'A' },
+            'laugh':     { headY: 5,  headZ: 5,  mouthForm: 1.0, eyeOpen: 0.5, bodyX: 4,  armPose: 'B' },
+            'neutral':   { headY: 0,  headZ: 0,  mouthForm: 0.5, eyeOpen: 1.0, bodyX: 0,  armPose: 'A' }
+        };
+        
         // Callbacks
         this.onLoad = null;
         this.onError = null;
@@ -207,6 +234,12 @@ class Live2DAvatar {
             this.isLoaded = true;
             document.getElementById('loading-overlay').classList.add('hidden');
             
+            // Auto-detect model type
+            this.detectModelType();
+            
+            // Apply setParameter from model config if available
+            await this.applyModelConfig(modelPath);
+            
             if (this.onLoad) this.onLoad(this.model);
             console.log('Live2D model loaded successfully');
             
@@ -261,6 +294,41 @@ class Live2DAvatar {
             }
         } catch (e) {
             // Parameter might not exist
+        }
+    }
+    
+    /**
+     * Set part opacity for pose switching (arm poses etc.)
+     * @param {string} partId - Part ID (e.g. 'PartArmA', 'PartArmB')
+     * @param {number} opacity - Opacity 0-1
+     */
+    setPartOpacity(partId, opacity) {
+        if (!this.model?.internalModel?.coreModel) return;
+        
+        try {
+            const coreModel = this.model.internalModel.coreModel;
+            const partIndex = coreModel.getPartIndex(partId);
+            
+            if (partIndex >= 0) {
+                coreModel.setPartOpacityByIndex(partIndex, opacity);
+            }
+        } catch (e) {
+            // Part might not exist in this model
+        }
+    }
+    
+    /**
+     * Switch arm pose (A = relaxed/down, B = raised/expressive)
+     * Uses the pose groups defined in pose3.json
+     * @param {string} pose - 'A' or 'B'
+     */
+    setArmPose(pose) {
+        if (pose === 'B') {
+            this.setPartOpacity('PartArmA', 0);
+            this.setPartOpacity('PartArmB', 1);
+        } else {
+            this.setPartOpacity('PartArmA', 1);
+            this.setPartOpacity('PartArmB', 0);
         }
     }
     
@@ -405,6 +473,114 @@ class Live2DAvatar {
      */
     setVowel(vowel, intensity = 1) {
         this.setLipSync(intensity, vowel);
+    }
+    
+    /**
+     * Detect model type by probing available parameters
+     */
+    detectModelType() {
+        if (!this.model?.internalModel?.coreModel) return;
+        
+        const coreModel = this.model.internalModel.coreModel;
+        
+        // Check for vowel parameters (kei_vowels_pro style)
+        const hasVowelA = coreModel.getParameterIndex('ParamA') >= 0;
+        const hasVowelI = coreModel.getParameterIndex('ParamI') >= 0;
+        
+        if (hasVowelA && hasVowelI) {
+            this.modelType = 'vowel';
+            console.log('🎭 Model type detected: vowel (kei_vowels_pro style)');
+        } else {
+            this.modelType = 'arkit';
+            console.log('🎭 Model type detected: standard (hiyori/generated)');
+        }
+    }
+    
+    /**
+     * Apply setParameter config from generated model metadata
+     */
+    async applyModelConfig(modelPath) {
+        if (!modelPath || !modelPath.includes('/generated/')) return;
+        
+        try {
+            // Derive config.json path from model path
+            const pathParts = modelPath.split('/');
+            const genIndex = pathParts.indexOf('generated');
+            if (genIndex < 0 || genIndex + 1 >= pathParts.length) return;
+            
+            // Build path to metadata.json in the generated model folder
+            const basePath = pathParts.slice(0, genIndex + 2).join('/');
+            const metadataUrl = basePath + '/metadata.json';
+            
+            const response = await fetch(metadataUrl);
+            if (!response.ok) return;
+            
+            const metadata = await response.json();
+            const setParams = metadata.set_parameter;
+            
+            if (setParams) {
+                for (const [param, value] of Object.entries(setParams)) {
+                    this.setParam(param, value);
+                    console.log(`  ⚙️ Set ${param} = ${value}`);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not apply model config:', e);
+        }
+    }
+    
+    /**
+     * Set the current emotion for the avatar
+     * @param {string} emotion - Emotion name from EMOTION_PATTERN
+     */
+    setEmotion(emotion) {
+        emotion = emotion?.toLowerCase() || 'neutral';
+        if (!this.emotionMap[emotion]) emotion = 'neutral';
+        
+        this.currentEmotion = emotion;
+        this.emotionIntensity = 1.0;
+        
+        console.log(`🎭 Emotion set: ${emotion}`);
+        
+        // Apply emotion effect to animation
+        const emo = this.emotionMap[emotion];
+        
+        // Adjust head position targets
+        this.animationState.targetHeadY = emo.headY;
+        this.animationState.headTiltZ = emo.headZ;
+        
+        // Set mouth form for expression
+        this.setParam(this.PARAMS.MOUTH_FORM, emo.mouthForm);
+        
+        // Eye opening adjustment
+        if (!this.animationState.blinking) {
+            this.setParam(this.PARAMS.EYE_L_OPEN, Math.min(1, emo.eyeOpen));
+            this.setParam(this.PARAMS.EYE_R_OPEN, Math.min(1, emo.eyeOpen));
+        }
+        
+        // Body sway
+        this.setParam(this.PARAMS.BODY_ANGLE_X, emo.bodyX);
+        
+        // Arm pose switching (from pose3.json)
+        if (emo.armPose) {
+            this.setArmPose(emo.armPose);
+        }
+        
+        // Special animations for certain emotions
+        if (emotion === 'surprised' || emotion === 'scared') {
+            // Quick head jolt
+            this.animationState.headTiltY += 5;
+        } else if (emotion === 'laugh' || emotion === 'excited') {
+            // Trigger extra body movement
+            this.animationState.headTiltX += (Math.random() - 0.5) * 10;
+        }
+        
+        // Decay emotion back to neutral over time
+        if (this.emotionDecayTimer) clearTimeout(this.emotionDecayTimer);
+        this.emotionDecayTimer = setTimeout(() => {
+            this.currentEmotion = 'neutral';
+            this.emotionIntensity = 0;
+        }, 5000);  // Hold emotion for 5 seconds
     }
     
     /**

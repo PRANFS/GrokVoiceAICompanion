@@ -12,6 +12,7 @@ let lipSyncValue = 0;
 let selectedLanguage = 'en';
 let currentBackgroundUrl = null;
 let dynamicBgEnabled = true;
+let generatedModels = [];  // Cached list of generated models
 
 // DOM Elements
 const micButton = document.getElementById('mic-button');
@@ -38,6 +39,19 @@ const voiceSelect = document.getElementById('voice-select');
 const instructionsTextarea = document.getElementById('instructions-textarea');
 const cancelPersonalityBtn = document.getElementById('cancel-personality-btn');
 const savePersonalityBtn = document.getElementById('save-personality-btn');
+
+// Character Generator Elements
+const charPromptInput = document.getElementById('char-prompt-input');
+const generateCharBtn = document.getElementById('generate-char-btn');
+const highQualityToggle = document.getElementById('high-quality-toggle');
+const genProgress = document.getElementById('gen-progress');
+const genProgressFill = document.querySelector('.gen-progress-fill');
+const genProgressText = document.getElementById('gen-progress-text');
+const galleryBtn = document.getElementById('gallery-btn');
+const galleryModal = document.getElementById('gallery-modal');
+const closeGalleryBtn = document.getElementById('close-gallery-btn');
+const galleryGrid = document.getElementById('gallery-grid');
+const galleryEmpty = document.getElementById('gallery-empty');
 
 // Language display names
 const languageNames = {
@@ -136,6 +150,13 @@ async function init() {
             addTranscript(text, 'assistant');
         },
         
+        onEmotionChange: (emotion) => {
+            console.log(`[App] Emotion change: ${emotion}`);
+            if (avatar) {
+                avatar.setEmotion(emotion);
+            }
+        },
+        
         onError: (err) => {
             console.error('WebSocket error:', err);
             showError(err.error?.message || 'Connection error');
@@ -144,6 +165,9 @@ async function init() {
     
     // Setup event listeners
     setupEventListeners();
+    
+    // Load generated models into dropdown
+    await loadGeneratedModels();
 }
 
 /**
@@ -215,6 +239,26 @@ function setupEventListeners() {
             if (isSessionActive && wsClient) {
                 wsClient.sendDynamicBgToggle(dynamicBgEnabled);
             }
+        });
+    }
+    
+    // Character Generator
+    if (generateCharBtn) {
+        generateCharBtn.addEventListener('click', generateCharacter);
+    }
+    
+    // Gallery
+    if (galleryBtn) {
+        galleryBtn.addEventListener('click', openGallery);
+    }
+    if (closeGalleryBtn) {
+        closeGalleryBtn.addEventListener('click', () => {
+            galleryModal.classList.add('hidden');
+        });
+    }
+    if (galleryModal) {
+        galleryModal.addEventListener('click', (e) => {
+            if (e.target === galleryModal) galleryModal.classList.add('hidden');
         });
     }
     
@@ -547,6 +591,226 @@ async function savePersonality() {
         savePersonalityBtn.disabled = false;
         savePersonalityBtn.textContent = '💾 Save';
     }
+}
+
+/**
+ * Load generated models into the dropdown and cache the list
+ */
+async function loadGeneratedModels() {
+    try {
+        const response = await fetch('/generated-models');
+        const data = await response.json();
+        generatedModels = data.models || [];
+        
+        // Add generated models to dropdown
+        generatedModels.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.model_path;
+            const shortPrompt = (model.prompt || 'Generated Character').substring(0, 30);
+            option.textContent = `✨ ${shortPrompt}${model.prompt?.length > 30 ? '...' : ''}`;
+            option.dataset.modelId = model.id;
+            modelDropdown.appendChild(option);
+        });
+        
+        console.log(`📦 Loaded ${generatedModels.length} generated model(s)`);
+    } catch (e) {
+        console.warn('Could not load generated models:', e);
+    }
+}
+
+/**
+ * Generate a new character from the prompt input
+ */
+async function generateCharacter() {
+    const prompt = charPromptInput?.value?.trim();
+    if (!prompt) {
+        showError('Please enter a character description');
+        return;
+    }
+    
+    const isHighQuality = highQualityToggle?.checked ?? true;
+    const quality = isHighQuality ? 'high' : 'standard';
+    
+    // Show progress, disable button
+    generateCharBtn.disabled = true;
+    generateCharBtn.textContent = '⏳ Generating...';
+    genProgress.classList.remove('hidden');
+    
+    // Simulate step progress (actual steps come from server, but we poll)
+    genProgressFill.style.width = '5%';
+    genProgressText.textContent = 'Starting...';
+    
+    // Animated progress simulation for better UX
+    const progressSteps = isHighQuality
+        ? [
+            { pct: 10, text: '🔍 Analyzing description...', delay: 2000 },
+            { pct: 30, text: '🎨 Generating reference artwork...', delay: 8000 },
+            { pct: 55, text: '🔬 Analyzing textures...', delay: 3000 },
+            { pct: 75, text: '🖌️ Applying colors to model...', delay: 5000 },
+            { pct: 90, text: '📦 Assembling model...', delay: 5000 },
+        ]
+        : [
+            { pct: 15, text: '🔍 Analyzing description...', delay: 2000 },
+            { pct: 45, text: '🔬 Analyzing textures...', delay: 3000 },
+            { pct: 70, text: '🖌️ Applying colors...', delay: 5000 },
+            { pct: 90, text: '📦 Assembling model...', delay: 5000 },
+        ];
+    
+    // Run animated progress in background
+    let progressAbort = false;
+    (async () => {
+        for (const step of progressSteps) {
+            if (progressAbort) break;
+            genProgressFill.style.width = step.pct + '%';
+            genProgressText.textContent = step.text;
+            await new Promise(r => setTimeout(r, step.delay));
+        }
+    })();
+    
+    try {
+        const response = await fetch('/generate-character', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, quality })
+        });
+        
+        progressAbort = true;
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Generation failed');
+        }
+        
+        if (data.success && data.model) {
+            // Update progress to done
+            genProgressFill.style.width = '100%';
+            genProgressText.textContent = '✅ Character generated!';
+            
+            const model = data.model;
+            
+            // Add to dropdown
+            const option = document.createElement('option');
+            option.value = model.model_path;
+            const shortPrompt = (model.prompt || 'Generated').substring(0, 30);
+            option.textContent = `✨ ${shortPrompt}${model.prompt?.length > 30 ? '...' : ''}`;
+            option.dataset.modelId = model.id;
+            modelDropdown.appendChild(option);
+            
+            // Select and load the new model
+            modelDropdown.value = model.model_path;
+            avatar.loadModel(model.model_path);
+            
+            // Cache it
+            generatedModels.unshift(model);
+            
+            // Show success toast
+            const toast = document.getElementById('error-toast');
+            toast.textContent = '✨ Character generated and loaded!';
+            toast.style.background = 'rgba(107, 203, 119, 0.9)';
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+                toast.style.background = '';
+            }, 3000);
+        }
+        
+    } catch (error) {
+        console.error('Character generation failed:', error);
+        showError(error.message || 'Character generation failed');
+    } finally {
+        generateCharBtn.disabled = false;
+        generateCharBtn.textContent = '✨ Generate';
+        setTimeout(() => {
+            genProgress.classList.add('hidden');
+            genProgressFill.style.width = '0%';
+        }, 2000);
+    }
+}
+
+/**
+ * Open the character gallery modal
+ */
+async function openGallery() {
+    galleryModal.classList.remove('hidden');
+    
+    // Refresh the model list
+    try {
+        const response = await fetch('/generated-models');
+        const data = await response.json();
+        generatedModels = data.models || [];
+    } catch (e) {
+        console.warn('Could not refresh models:', e);
+    }
+    
+    renderGallery();
+}
+
+/**
+ * Render gallery cards
+ */
+function renderGallery() {
+    galleryGrid.innerHTML = '';
+    
+    if (generatedModels.length === 0) {
+        galleryEmpty.classList.remove('hidden');
+        galleryGrid.classList.add('hidden');
+        return;
+    }
+    
+    galleryEmpty.classList.add('hidden');
+    galleryGrid.classList.remove('hidden');
+    
+    generatedModels.forEach(model => {
+        const card = document.createElement('div');
+        card.className = 'gallery-card';
+        
+        const thumbHtml = model.has_thumbnail && model.thumbnail_url
+            ? `<img src="${model.thumbnail_url}" alt="thumbnail" loading="lazy">`
+            : `<span class="no-thumb">🎭</span>`;
+        
+        card.innerHTML = `
+            <div class="gallery-card-thumb">${thumbHtml}</div>
+            <div class="gallery-card-info">
+                <p class="prompt-text">${model.prompt || 'Generated Character'}</p>
+                <p class="card-date">${model.created_at || ''}</p>
+            </div>
+            <div class="gallery-card-actions">
+                <button class="use-btn" data-path="${model.model_path}">Use</button>
+                <button class="delete-btn" data-id="${model.id}">🗑️</button>
+            </div>
+        `;
+        
+        // Use button
+        card.querySelector('.use-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const path = e.target.dataset.path;
+            modelDropdown.value = path;
+            avatar.loadModel(path);
+            galleryModal.classList.add('hidden');
+        });
+        
+        // Delete button
+        card.querySelector('.delete-btn').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const id = e.target.dataset.id;
+            if (confirm('Delete this character?')) {
+                try {
+                    await fetch(`/generated-models/${id}`, { method: 'DELETE' });
+                    generatedModels = generatedModels.filter(m => m.id !== id);
+                    
+                    // Remove from dropdown
+                    const opt = modelDropdown.querySelector(`option[data-model-id="${id}"]`);
+                    if (opt) opt.remove();
+                    
+                    renderGallery();
+                } catch (err) {
+                    showError('Failed to delete model');
+                }
+            }
+        });
+        
+        galleryGrid.appendChild(card);
+    });
 }
 
 // Initialize on page load

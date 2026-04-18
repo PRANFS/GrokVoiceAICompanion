@@ -1,0 +1,23 @@
+{
+  "id": "generated_20260228-190257",
+  "prompt": "cyberpunk girl with pink hair and neon outfit",
+  "attributes": {
+    "hair_color": "#FF69B4",
+    "eye_color": "#00FFFF",
+    "skin_tone": "#FFE0C4",
+    "top_color": "#0D0D2B",
+    "bottom_color": "#1A0A2E",
+    "accent_color": "#FF00FF",
+    "shoe_color": "#2D2D2D",
+    "style_note": "cyberpunk girl with pink hair and glowing neon outfit"
+  },
+  "model3_json": "hiyori_pro_t11.model3.json",
+  "model_path": "/static/models/generated/generated_20260228-190257/hiyori_pro_t11.model3.json",
+  "thumbnail_url": "/static/models/generated/generated_20260228-190257/thumbnail.png",
+  "reference_url": "/static/models/generated/generated_20260228-190257/reference.png",
+  "created_at": "2026-02-28 19:03:19",
+  "timestamp": "20260228-190257",
+  "has_thumbnail": true,
+  "base_model": "Hiyori",
+  "generation_method": "ai_edit"
+}

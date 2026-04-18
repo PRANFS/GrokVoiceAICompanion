@@ -20,6 +20,7 @@ class GrokWebSocketClient {
         this.onVolumeChange = options.onVolumeChange || (() => {});
         this.onBackgroundUpdate = options.onBackgroundUpdate || (() => {});
         this.onVisionResponse = options.onVisionResponse || (() => {});
+        this.onEmotionChange = options.onEmotionChange || (() => {});
         this.onError = options.onError || (() => {});
         
         // WebSocket
@@ -404,6 +405,11 @@ class GrokWebSocketClient {
                     // Turn off the webcam after the response — it will be
                     // re-initialized on the next vision trigger if needed.
                     this.stopWebcam();
+                    break;
+                    
+                case 'emotion.detected':
+                    console.log('🎭 Emotion detected:', message.emotion);
+                    this.onEmotionChange(message.emotion);
                     break;
             }
         } catch (error) {

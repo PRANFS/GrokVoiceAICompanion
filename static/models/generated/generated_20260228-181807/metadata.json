@@ -1,0 +1,21 @@
+{
+  "id": "generated_20260228-181807",
+  "prompt": "girl wearing a superman outfit",
+  "attributes": {
+    "hair_color": "#000000",
+    "eye_color": "#4169E1",
+    "skin_tone": "#FFE0C4",
+    "top_color": "#1976D2",
+    "bottom_color": "#1976D2",
+    "accent_color": "#FF0000",
+    "shoe_color": "#D32F2F",
+    "style_note": "girl in classic Superman superhero outfit with blue suit, red cape and boots"
+  },
+  "model3_json": "hiyori_pro_t11.model3.json",
+  "model_path": "/static/models/generated/generated_20260228-181807/hiyori_pro_t11.model3.json",
+  "thumbnail_url": "/static/models/generated/generated_20260228-181807/thumbnail.png",
+  "created_at": "2026-02-28 18:18:24",
+  "timestamp": "20260228-181807",
+  "has_thumbnail": true,
+  "base_model": "Hiyori"
+}

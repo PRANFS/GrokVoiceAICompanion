@@ -184,8 +184,7 @@ body {
 /* Controls Panel */
 #controls-panel {
     bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
+    right: 30px;
     display: flex;
     gap: 15px;
     align-items: center;
@@ -625,4 +624,211 @@ body {
 @keyframes visionPulse {
     0%, 100% { opacity: 0.85; }
     50% { opacity: 1; }
+}
+
+/* ── Character Generator ────────────────────────── */
+.panel-divider {
+    width: 100%;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.15);
+    margin: 5px 0;
+}
+
+#character-generator {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.quality-toggle {
+    font-size: 11px !important;
+    margin: 2px 0;
+    padding: 4px 0;
+}
+
+#char-prompt-input {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 60px;
+}
+
+#char-prompt-input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+#char-prompt-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+}
+
+#generate-char-btn {
+    width: 100%;
+}
+
+/* Progress bar */
+#gen-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gen-progress-bar {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    overflow: hidden;
+}
+
+.gen-progress-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
+    background-size: 200% 100%;
+    animation: genProgressShimmer 2s ease-in-out infinite;
+    transition: width 0.5s ease;
+}
+
+@keyframes genProgressShimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+#gen-progress-text {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: center;
+}
+
+/* ── Gallery Modal ──────────────────────────────── */
+.modal-large {
+    max-width: 700px;
+}
+
+.gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 15px;
+}
+
+.gallery-card {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.gallery-card:hover {
+    transform: translateY(-3px);
+    border-color: #667eea;
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+}
+
+.gallery-card-thumb {
+    width: 100%;
+    aspect-ratio: 3/4;
+    object-fit: cover;
+    background: rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gallery-card-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gallery-card-thumb .no-thumb {
+    font-size: 40px;
+    opacity: 0.3;
+}
+
+.gallery-card-info {
+    padding: 10px;
+}
+
+.gallery-card-info .prompt-text {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.4;
+    max-height: 40px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.gallery-card-info .card-date {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 5px;
+}
+
+.gallery-card-actions {
+    display: flex;
+    gap: 5px;
+    padding: 0 10px 10px;
+}
+
+.gallery-card-actions button {
+    flex: 1;
+    padding: 5px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.gallery-card-actions button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.gallery-card-actions .delete-btn:hover {
+    background: rgba(255, 80, 80, 0.3);
+    border-color: rgba(255, 80, 80, 0.5);
+}
+
+.gallery-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.gallery-empty p:first-child {
+    font-size: 16px;
+    margin-bottom: 8px;
+}
+
+.gallery-empty p:last-child {
+    font-size: 13px;
+}
+
+/* ── Model Selector scroll ──────────────────────── */
+#model-selector {
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+#model-selector::-webkit-scrollbar {
+    width: 4px;
+}
+
+#model-selector::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
 }
