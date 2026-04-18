@@ -12,6 +12,9 @@ let lipSyncValue = 0;
 let selectedLanguage = 'en';
 let currentBackgroundUrl = null;
 let dynamicBgEnabled = true;
+const PIPELINE_REALTIME_AGENT = 'realtime_agent';
+const PIPELINE_LOCAL_STT_TTS = 'local_stt_tts';
+let currentPipelineMode = localStorage.getItem('pipeline_mode') || PIPELINE_REALTIME_AGENT;
 
 // DOM Elements
 const micButton = document.getElementById('mic-button');
@@ -19,6 +22,7 @@ const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const modelDropdown = document.getElementById('model-dropdown');
 const languageDropdown = document.getElementById('language-dropdown');
+const languageSelectorGroup = document.getElementById('language-selector-group');
 const loadCustomBtn = document.getElementById('load-custom-btn');
 const customModelInput = document.getElementById('custom-model-input');
 const transcriptPanel = document.getElementById('transcript-panel');
@@ -29,6 +33,9 @@ const subtitleText = document.getElementById('subtitle-text');
 const dynamicBackground = document.getElementById('dynamic-background');
 const dynamicBgToggle = document.getElementById('dynamic-bg-toggle');
 const visionIndicator = document.getElementById('vision-indicator');
+const modeRealtimeBtn = document.getElementById('mode-realtime-btn');
+const modeLocalBtn = document.getElementById('mode-local-btn');
+const pipelineModeDescription = document.getElementById('pipeline-mode-description');
 
 // Personality Modal Elements
 const personalityBtn = document.getElementById('personality-btn');
@@ -55,21 +62,12 @@ const languageNames = {
  */
 async function init() {
     console.log('🚀 Initializing Grok Voice AI Companion...');
-    
-    // Initialize Live2D Avatar
-    avatar = new Live2DAvatar('live2d-canvas');
-    avatar.onLoad = () => {
-        console.log('✅ Avatar loaded');
-        micButton.disabled = false;
-    };
-    avatar.onError = (error) => {
-        console.error('Avatar error:', error);
-        showError('Failed to load avatar');
-    };
-    
-    // Load default model
-    await avatar.loadModel(modelDropdown.value);
-    
+
+    applyPipelineModeUI();
+
+    // Bind controls first so mode switching still works even if avatar loading is slow.
+    setupEventListeners();
+
     // Initialize WebSocket client
     wsClient = new GrokWebSocketClient({
         wsUrl: `ws://${window.location.host}/ws`,
@@ -99,7 +97,7 @@ async function init() {
                 if (!speaking) {
                     // Extra force-close when Grok finishes response
                     lipSyncValue = 0;
-                    avatar.setLipSync(0);
+                    avatar?.setLipSync(0);
                 }
             }
         },
@@ -114,7 +112,7 @@ async function init() {
                 
                 console.log(`[App] Updating avatar lip sync: lipSyncValue=${lipSyncValue.toFixed(2)}, vowel=${vowel}`);
                 // Pass vowel to avatar for proper mouth shape
-                avatar.setLipSync(lipSyncValue, vowel);
+                avatar?.setLipSync(lipSyncValue, vowel);
             } else {
                 console.log(`[App] Skipping avatar update (type=${type})`);
             }
@@ -131,9 +129,7 @@ async function init() {
         onVisionResponse: (text) => {
             console.log(`[App] Vision response: ${text?.substring(0, 80)}`);
             hideVisionIndicator();
-            // The avatar will speak the response via the realtime API injection.
-            // Optionally show it in the transcript too.
-            addTranscript(text, 'assistant');
+            // Speech and transcript lines are emitted through the normal response path.
         },
         
         onError: (err) => {
@@ -142,8 +138,29 @@ async function init() {
         }
     });
     
-    // Setup event listeners
-    setupEventListeners();
+    // Initialize Live2D Avatar after controls are ready.
+    try {
+        avatar = new Live2DAvatar('live2d-canvas');
+        avatar.onLoad = () => {
+            console.log('✅ Avatar loaded');
+            if (currentPipelineMode === PIPELINE_REALTIME_AGENT) {
+                micButton.disabled = false;
+            }
+        };
+        avatar.onError = (error) => {
+            console.error('Avatar error:', error);
+            showError('Failed to load avatar');
+        };
+
+        await avatar.loadModel(modelDropdown.value);
+    } catch (error) {
+        console.error('Failed to initialize avatar:', error);
+        showError('Avatar failed to load. Voice controls are still available.');
+    }
+
+    if (currentPipelineMode === PIPELINE_LOCAL_STT_TTS) {
+        await ensureLocalModeSession();
+    }
 }
 
 /**
@@ -152,6 +169,21 @@ async function init() {
 function setupEventListeners() {
     // Mic button
     micButton.addEventListener('click', toggleConversation);
+
+    // Pipeline mode buttons
+    modeRealtimeBtn?.addEventListener('click', () => {
+        setPipelineMode(PIPELINE_REALTIME_AGENT).catch((error) => {
+            console.error('Failed to switch to realtime mode:', error);
+            showError('Failed to switch mode');
+        });
+    });
+
+    modeLocalBtn?.addEventListener('click', () => {
+        setPipelineMode(PIPELINE_LOCAL_STT_TTS).catch((error) => {
+            console.error('Failed to switch to local mode:', error);
+            showError('Failed to switch mode');
+        });
+    });
     
     // Model dropdown
     modelDropdown.addEventListener('change', () => {
@@ -160,6 +192,12 @@ function setupEventListeners() {
     
     // Language dropdown
     languageDropdown.addEventListener('change', () => {
+        if (currentPipelineMode === PIPELINE_LOCAL_STT_TTS) {
+            languageDropdown.value = 'en';
+            selectedLanguage = 'en';
+            return;
+        }
+
         selectedLanguage = languageDropdown.value;
         console.log(`🌐 Language changed to: ${languageNames[selectedLanguage]}`);
         
@@ -227,9 +265,91 @@ function setupEventListeners() {
 }
 
 /**
- * Toggle conversation on/off
+ * Apply UI state for selected pipeline mode.
+ */
+function applyPipelineModeUI() {
+    const isLocalMode = currentPipelineMode === PIPELINE_LOCAL_STT_TTS;
+
+    modeRealtimeBtn?.classList.toggle('active', !isLocalMode);
+    modeLocalBtn?.classList.toggle('active', isLocalMode);
+
+    if (languageSelectorGroup) {
+        languageSelectorGroup.classList.toggle('hidden', isLocalMode);
+    }
+
+    if (isLocalMode) {
+        selectedLanguage = 'en';
+        languageDropdown.value = 'en';
+        micButton.classList.add('hidden');
+        micButton.disabled = true;
+        if (pipelineModeDescription) {
+            pipelineModeDescription.textContent =
+                'Moonshine STT + Grok chat + Grok streaming TTS (English only)';
+        }
+    } else {
+        micButton.classList.remove('hidden');
+        micButton.disabled = false;
+        if (pipelineModeDescription) {
+            pipelineModeDescription.textContent = 'Realtime Grok Voice Agent mode';
+        }
+    }
+}
+
+/**
+ * Switch between realtime and local pipeline modes.
+ */
+async function setPipelineMode(mode) {
+    if (mode !== PIPELINE_REALTIME_AGENT && mode !== PIPELINE_LOCAL_STT_TTS) {
+        return;
+    }
+
+    if (mode === currentPipelineMode) {
+        if (mode === PIPELINE_LOCAL_STT_TTS) {
+            await ensureLocalModeSession();
+        }
+        return;
+    }
+
+    currentPipelineMode = mode;
+    localStorage.setItem('pipeline_mode', currentPipelineMode);
+
+    if (isSessionActive) {
+        stopConversation();
+    }
+
+    applyPipelineModeUI();
+
+    if (!wsClient) {
+        console.warn('WebSocket client not ready yet; deferring mode connection.');
+        return;
+    }
+
+    if (currentPipelineMode === PIPELINE_LOCAL_STT_TTS) {
+        await ensureLocalModeSession();
+    } else {
+        updateStatus('disconnected');
+    }
+}
+
+/**
+ * Ensure local mode is actively listening.
+ */
+async function ensureLocalModeSession() {
+    if (currentPipelineMode !== PIPELINE_LOCAL_STT_TTS || isSessionActive || !wsClient) {
+        return;
+    }
+
+    await startConversation({ autoStarted: true });
+}
+
+/**
+ * Toggle conversation on/off (realtime mode only).
  */
 async function toggleConversation() {
+    if (currentPipelineMode === PIPELINE_LOCAL_STT_TTS) {
+        return;
+    }
+
     if (isSessionActive) {
         stopConversation();
     } else {
@@ -238,31 +358,44 @@ async function toggleConversation() {
 }
 
 /**
- * Start conversation
+ * Start conversation.
  */
-async function startConversation() {
+async function startConversation({ autoStarted = false } = {}) {
     try {
         updateStatus('connecting');
-        
-        // Get selected language
-        selectedLanguage = languageDropdown.value;
-        
-        // Connect to WebSocket with language parameter
-        await wsClient.connect(selectedLanguage);
-        
-        // Start audio capture
+
+        if (!wsClient) {
+            showError('Connection is still initializing. Please try again.');
+            updateStatus('disconnected');
+            return;
+        }
+
+        // Local mode is currently English-only.
+        if (currentPipelineMode === PIPELINE_LOCAL_STT_TTS) {
+            selectedLanguage = 'en';
+            languageDropdown.value = 'en';
+        } else {
+            selectedLanguage = languageDropdown.value;
+        }
+
+        await wsClient.connect(selectedLanguage, currentPipelineMode);
+
         const success = await wsClient.startAudioCapture();
         if (success) {
             isSessionActive = true;
-            
-            // Sync dynamic background toggle state to backend
+
             wsClient.sendDynamicBgToggle(dynamicBgEnabled);
-            micButton.classList.remove('inactive');
-            micButton.classList.add('active');
-            micButton.textContent = '🎤';
-            clearTranscripts();
+            if (currentPipelineMode === PIPELINE_REALTIME_AGENT) {
+                micButton.classList.remove('inactive');
+                micButton.classList.add('active');
+                micButton.textContent = '🎤';
+            }
+
+            if (!autoStarted) {
+                clearTranscripts();
+            }
+            updateStatus('connected');
         }
-        
     } catch (error) {
         console.error('Failed to start conversation:', error);
         showError('Failed to start. Is the backend running?');
@@ -271,45 +404,53 @@ async function startConversation() {
 }
 
 /**
- * Stop conversation
+ * Stop conversation.
  */
 function stopConversation() {
-    wsClient.stopAudioCapture();
-    wsClient.disconnect();
-    
+    if (wsClient) {
+        wsClient.stopAudioCapture();
+        wsClient.disconnect();
+    }
+
     isSessionActive = false;
     micButton.classList.remove('active');
     micButton.classList.add('inactive');
     micButton.textContent = '🎙️';
-    
+
     updateStatus('disconnected');
     lipSyncValue = 0;
-    avatar.setLipSync(0);
-
+    avatar?.setLipSync(0);
 }
 
 /**
- * Update status display
+ * Update status display.
  */
 function updateStatus(state) {
     statusDot.className = '';
-    
+    const isLocalMode = currentPipelineMode === PIPELINE_LOCAL_STT_TTS;
+
     switch (state) {
         case 'disconnected':
             statusDot.classList.add('disconnected');
-            statusText.textContent = 'Click microphone to start';
+            statusText.textContent = isLocalMode
+                ? 'STT/TTS mode paused. Reconnect by selecting STT/TTS.'
+                : 'Click microphone to start';
             break;
         case 'connecting':
             statusDot.classList.add('connecting');
-            statusText.textContent = 'Connecting...';
+            statusText.textContent = isLocalMode
+                ? 'Starting Moonshine STT/TTS pipeline...'
+                : 'Connecting...';
             break;
         case 'connected':
             statusDot.classList.add('connected');
-            statusText.textContent = isSessionActive ? 'Listening...' : 'Connected';
+            statusText.textContent = isLocalMode
+                ? 'Always listening (STT/TTS, English only)'
+                : (isSessionActive ? 'Listening...' : 'Connected');
             break;
         case 'speaking':
             statusDot.classList.add('speaking');
-            statusText.textContent = 'AI Speaking...';
+            statusText.textContent = isLocalMode ? 'AI Speaking (STT/TTS mode)...' : 'AI Speaking...';
             break;
     }
 }

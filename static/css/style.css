@@ -101,6 +101,61 @@ body {
     z-index: 100;
 }
 
+/* Pipeline Mode Selector */
+#pipeline-mode-panel {
+    top: 20px;
+    left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 15px;
+    min-width: 260px;
+    z-index: 250;
+    pointer-events: auto;
+}
+
+#pipeline-mode-panel label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.mode-toggle {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.mode-btn {
+    padding: 9px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    font-size: 13px;
+    text-align: left;
+    transition: all 0.2s ease;
+    pointer-events: auto;
+}
+
+.mode-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.mode-btn.active {
+    border-color: rgba(102, 126, 234, 0.9);
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.45) 0%, rgba(118, 75, 162, 0.45) 100%);
+    box-shadow: 0 6px 18px rgba(102, 126, 234, 0.25);
+}
+
+.mode-note {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.4;
+}
+
 /* Model Selector */
 #model-selector {
     top: 20px;

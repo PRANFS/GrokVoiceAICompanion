@@ -9,10 +9,12 @@ AI Companion powered by xAI's Grok Voice Agent API with customizable Live2D avat
 ## Features
 
 - **Real-time Voice Conversation** - Talk naturally with Grok AI using WebRTC
+- **Dual Voice Pipelines** - Switch between Grok Voice Agent and STT/TTS mode from the top-left toggle
 - **Natural Animations** - Eye blinks, breathing, head movements & lip sync (WIP)
 - **Dynamic Backgrounds** - AI-generated backgrounds that change based on conversation topics
-- **Vison Capabilities** - AI Companion can see your webcam when you ask it to, and respond to visual cues
+- **Vision Capabilities** - AI Companion can see your webcam when you ask it to, and respond to visual cues
 - **Multi-Language Support** - Supports English, Japanese, Korean, Chinese, Spanish, French, and German
+- **STT/TTS Mode (English-only)** - Moonshine English Medium Streaming STT -> Grok 4.1 Fast Non-Reasoning -> Grok Streaming TTS
 - **Customizable Models** - Load your own Live2D models
 - **Voice Selection** - Choose from multiple AI voices (ara, rex, sal, eve, leo)
 - **Personality Customization** - Modify AI personality and behavior via API
@@ -72,8 +74,14 @@ pip install -r requirements.txt
 
 ### 3. Configure API Key
 
-> **Note:** API Pricing is $0.05 per minute connected for Grok Voice Agent and $0.02 per image generated for Grok Imagine.  
-
+> **Note:** API Pricing is **$0.05 per minute connected** for Grok Voice Agent and **$0.02 per image generated** for Grok Imagine.  
+> 
+> **STT/TTS Mode (English-only)** – Moonshine English Medium Streaming STT (free) → Grok 4.1 Fast Non-Reasoning → Grok Streaming TTS  
+> This cheaper alternative pipeline typically costs **$0.005 – $0.015 per minute** of conversation (often 5–10x cheaper than the full Voice Agent).  
+> Breakdown:  
+> - Moonshine STT: **$0** (open-source)  
+> - Grok 4.1 Fast Non-Reasoning: **$0.20 / M input tokens** + **$0.50 / M output tokens**  
+> - Grok TTS: **$4.20 / M characters** (charged only for generated output)
 Create a `.env` file in the project root:
 
 ```env
@@ -89,6 +97,8 @@ PORT=8080
 python run.py
 ```
 
+> First startup with STT/TTS mode may take longer while the backend auto-downloads Moonshine's English Medium Streaming model.
+
 ### 5. Open in Browser
 
 Navigate to: **http://localhost:8080**
@@ -103,6 +113,18 @@ Click the microphone button 🎙️ to start talking!
 4. **Load custom model** - Click "Load Custom" to browse for your own Live2D models
 5. **Change voice & edits personality** - Use the dropdowns to select different voices and modify personality traits
 6. **Toggle dynamic background** - Click the dynamic background toggle to turn on/off AI-generated backgrounds that change based on conversation topics
+
+### Voice Pipeline Modes
+
+- **Grok Voice Agent (default)**:
+   - Existing realtime mode.
+   - Uses voice-agent API path and language dropdown.
+
+- **STT/TTS Mode (English-only)**:
+   - Uses Moonshine English Medium Streaming STT locally.
+   - Sends transcript text to `grok-4-1-fast-non-reasoning`.
+   - Speaks reply through Grok Streaming TTS.
+   - Starts listening automatically (no dedicated on/off button).
 
 ## Adding Custom Live2D Models (Lipsync may not work properly on custom models)
 

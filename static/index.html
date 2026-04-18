@@ -30,6 +30,16 @@
             <canvas id="live2d-canvas"></canvas>
         </div>
 
+        <!-- Pipeline Mode Selector -->
+        <div id="pipeline-mode-panel" class="panel">
+            <label>Pipeline Mode</label>
+            <div class="mode-toggle" role="group" aria-label="Voice pipeline mode">
+                <button id="mode-realtime-btn" class="mode-btn active" type="button">⚡ Grok Voice Agent</button>
+                <button id="mode-local-btn" class="mode-btn" type="button">🎙️ STT/TTS</button>
+            </div>
+            <p id="pipeline-mode-description" class="mode-note">Realtime Grok Voice Agent mode</p>
+        </div>
+
         <!-- Model Selector -->
         <div id="model-selector" class="panel">
             <label>Select Avatar</label>
@@ -38,17 +48,19 @@
             </select>
             <button id="load-custom-btn" class="secondary-btn">📁 Load Custom</button>
             <input type="file" id="custom-model-input" accept=".model3.json" style="display: none;">
-            
-            <label>Voice Language</label>
-            <select id="language-dropdown">
-                <option value="en">🇬🇧 English</option>
-                <option value="ja">🇯🇵 Japanese (日本語)</option>
-                <option value="ko">🇰🇷 Korean (한국어)</option>
-                <option value="zh">🇨🇳 Chinese (中文)</option>
-                <option value="es">🇪🇸 Spanish (Español)</option>
-                <option value="fr">🇫🇷 French (Français)</option>
-                <option value="de">🇩🇪 German (Deutsch)</option>
-            </select>
+
+            <div id="language-selector-group">
+                <label>Voice Language</label>
+                <select id="language-dropdown">
+                    <option value="en">🇬🇧 English</option>
+                    <option value="ja">🇯🇵 Japanese (日本語)</option>
+                    <option value="ko">🇰🇷 Korean (한국어)</option>
+                    <option value="zh">🇨🇳 Chinese (中文)</option>
+                    <option value="es">🇪🇸 Spanish (Español)</option>
+                    <option value="fr">🇫🇷 French (Français)</option>
+                    <option value="de">🇩🇪 German (Deutsch)</option>
+                </select>
+            </div>
             
             <button id="personality-btn" class="secondary-btn">🎭 Edit Personality</button>
             

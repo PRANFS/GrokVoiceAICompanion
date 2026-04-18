@@ -10,7 +10,11 @@ import json
 import asyncio
 import base64
 import logging
+import re
+import sys
+from array import array
 from pathlib import Path
+from threading import Lock
 from typing import Optional
 
 import httpx
@@ -24,6 +28,15 @@ from deep_translator import GoogleTranslator
 # Grok Imagine API configuration
 GROK_IMAGINE_URL = "https://api.x.ai/v1/images/generations"
 GROK_CHAT_URL = "https://api.x.ai/v1/chat/completions"
+GROK_TTS_WS_URL = "wss://api.x.ai/v1/tts"
+
+# Pipeline modes
+PIPELINE_REALTIME_AGENT = "realtime_agent"
+PIPELINE_LOCAL_STT_TTS = "local_stt_tts"
+SUPPORTED_PIPELINE_MODES = {PIPELINE_REALTIME_AGENT, PIPELINE_LOCAL_STT_TTS}
+LOCAL_PIPELINE_LANGUAGE = "en"
+REALTIME_BG_MIN_CHARS = 90
+REALTIME_BG_MIN_SENTENCE_CHARS = 35
 
 # Load environment variables
 load_dotenv()
@@ -48,6 +61,44 @@ BASE_INSTRUCTIONS = (
     "look at something or asks what they are holding, you CAN see them. Never say "
     "you cannot see — you have full vision access. Respond naturally about what you see."
 )
+
+LOCAL_STT_TTS_INSTRUCTIONS = """
+
+IMPORTANT STT/TTS MODE INSTRUCTIONS:
+This mode speaks with text-to-speech and supports expressive speech tags.
+You must write responses in English only.
+
+Speech tags you can use:
+
+Inline tags:
+- Pauses: [pause], [long-pause], [hum-tune]
+- Laughter and crying: [laugh], [chuckle], [giggle], [cry]
+- Mouth sounds: [tsk], [tongue-click], [lip-smack]
+- Breathing: [breath], [inhale], [exhale], [sigh]
+
+Wrapping tags:
+- Volume and intensity: <soft>, <whisper>, <loud>, <build-intensity>, <decrease-intensity>
+- Pitch and speed: <higher-pitch>, <lower-pitch>, <slow>, <fast>
+- Vocal style: <sing-song>, <singing>, <laugh-speak>, <emphasis>
+
+Examples:
+"So I walked in and [pause] there it was. [laugh] I honestly could not believe it!"
+"I need to tell you something. <whisper>It is a secret.</whisper> Pretty cool, right?"
+
+Tips for speech tags:
+- Place inline tags where the expression would naturally occur in conversation.
+- Combine tags with punctuation, like: "Really? [laugh] That's incredible!"
+- Use [pause] or [long-pause] for dramatic timing.
+- Wrapping tags work best around complete phrases, like: <whisper>It is a secret.</whisper>
+- You can combine styles, like: <slow><soft>Goodnight, sleep well.</soft></slow>
+
+Best practices for TTS text:
+- Use natural punctuation. Commas, periods, and question marks improve pacing and intonation.
+- Add emotional context using exclamation marks and question marks where natural.
+- Break longer responses into short paragraphs for natural pauses.
+
+Do not overuse tags. Use them naturally and sparingly so speech still sounds conversational.
+"""
 
 # Language configurations
 LANGUAGE_CONFIG = {
@@ -115,6 +166,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Moonshine imports are optional so realtime mode can still run if local deps are missing.
+try:
+    from moonshine_voice import (
+        ModelArch,
+        Transcriber,
+        TranscriptEventListener,
+        get_model_for_language,
+    )
+
+    MOONSHINE_AVAILABLE = True
+    MOONSHINE_IMPORT_ERROR = ""
+except Exception as moonshine_import_error:
+    ModelArch = None  # type: ignore[assignment]
+    Transcriber = None  # type: ignore[assignment]
+    TranscriptEventListener = object  # type: ignore[assignment]
+    get_model_for_language = None  # type: ignore[assignment]
+    MOONSHINE_AVAILABLE = False
+    MOONSHINE_IMPORT_ERROR = str(moonshine_import_error)
+
+MOONSHINE_MODEL_PATH: Optional[str] = None
+MOONSHINE_MODEL_ARCH = None
+MOONSHINE_MODEL_LOCK = Lock()
+
 # Validate API key
 if not XAI_API_KEY:
     logger.error("❌ XAI_API_KEY not found in .env file")
@@ -172,8 +246,114 @@ def save_personality_settings():
         logger.error(f"Failed to save personality settings: {e}")
 
 
+def ensure_moonshine_medium_streaming_model() -> tuple[str, object]:
+    """Ensure the Moonshine English Medium Streaming model exists locally."""
+    global MOONSHINE_MODEL_PATH, MOONSHINE_MODEL_ARCH
+
+    if not MOONSHINE_AVAILABLE:
+        raise RuntimeError(
+            "Moonshine is not available. Install dependencies and verify native runtime setup."
+        )
+
+    with MOONSHINE_MODEL_LOCK:
+        if MOONSHINE_MODEL_PATH and MOONSHINE_MODEL_ARCH is not None:
+            return MOONSHINE_MODEL_PATH, MOONSHINE_MODEL_ARCH
+
+        cache_root_env = os.getenv("MOONSHINE_VOICE_CACHE", "").strip()
+        cache_root = Path(cache_root_env).resolve() if cache_root_env else None
+
+        model_path, model_arch = get_model_for_language(
+            wanted_language=LOCAL_PIPELINE_LANGUAGE,
+            wanted_model_arch=ModelArch.MEDIUM_STREAMING,
+            cache_root=cache_root,
+        )
+
+        MOONSHINE_MODEL_PATH = model_path
+        MOONSHINE_MODEL_ARCH = model_arch
+
+        logger.info("🎙️ Moonshine model ready")
+        logger.info(f"   Path: {MOONSHINE_MODEL_PATH}")
+        logger.info(f"   Arch: {MOONSHINE_MODEL_ARCH}")
+
+        return MOONSHINE_MODEL_PATH, MOONSHINE_MODEL_ARCH
+
+
+def build_local_stt_tts_instructions() -> str:
+    """Build system instructions for local STT/TTS pipeline."""
+    return BASE_INSTRUCTIONS + LOCAL_STT_TTS_INSTRUCTIONS
+
+
+def pcm16le_bytes_to_float32(audio_bytes: bytes) -> list[float]:
+    """Convert PCM16 little-endian bytes to float32 samples in [-1.0, 1.0]."""
+    if not audio_bytes:
+        return []
+
+    usable_length = len(audio_bytes) - (len(audio_bytes) % 2)
+    if usable_length <= 0:
+        return []
+
+    pcm_samples = array("h")
+    pcm_samples.frombytes(audio_bytes[:usable_length])
+
+    if sys.byteorder != "little":
+        pcm_samples.byteswap()
+
+    return [sample / 32768.0 for sample in pcm_samples]
+
+
+def chunk_text_for_tts(text: str, max_chunk_size: int = 12000) -> list[str]:
+    """Chunk text so each TTS text.delta stays under API limits."""
+    if not text:
+        return []
+
+    if len(text) <= max_chunk_size:
+        return [text]
+
+    chunks = []
+    current = []
+    current_len = 0
+
+    for word in text.split(" "):
+        candidate_len = current_len + len(word) + (1 if current else 0)
+        if candidate_len > max_chunk_size and current:
+            chunks.append(" ".join(current))
+            current = [word]
+            current_len = len(word)
+        else:
+            current.append(word)
+            current_len = candidate_len
+
+    if current:
+        chunks.append(" ".join(current))
+
+    return chunks
+
+
+def extract_user_input_text(message: dict) -> str:
+    """Extract input_text from conversation.item.create payloads."""
+    item = message.get("item", {})
+    content = item.get("content", [])
+    for part in content:
+        if part.get("type") == "input_text":
+            return str(part.get("text", "")).strip()
+    return ""
+
+
 # Load settings on startup
 load_personality_settings()
+
+
+@app.on_event("startup")
+async def preload_local_stt_model():
+    """Warm local STT resources so first local session has minimal setup delay."""
+    if not MOONSHINE_AVAILABLE:
+        logger.warning(f"⚠️ Moonshine unavailable at startup: {MOONSHINE_IMPORT_ERROR}")
+        return
+
+    try:
+        await asyncio.to_thread(ensure_moonshine_medium_streaming_model)
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Moonshine model at startup: {e}")
 
 # Track conversation context for background generation
 conversation_topics = {}  # connection_id -> {"current_topic": str, "last_background_url": str}
@@ -414,12 +594,116 @@ class GrokRelay:
         self.client_ws = client_ws
         self.connection_id = connection_id
         self.language = language
+        self.requires_grok_listener = True
         self.grok_ws: Optional[websockets.WebSocketClientProtocol] = None
         self.is_connected = False
         self.is_session_configured = False  # Track if session.update has been sent
         self.tasks: list[asyncio.Task] = []
-        self.accumulated_transcript = ""  # Track AI response for topic analysis
         self.pending_background_task: Optional[asyncio.Task] = None  # Background generation task
+        self.active_response_key: Optional[str] = None
+        self.response_transcripts: dict[str, str] = {}
+        self.responses_with_queued_background: set[str] = set()
+
+    def _cancel_pending_background_task(self):
+        if self.pending_background_task and not self.pending_background_task.done():
+            self.pending_background_task.cancel()
+        self.pending_background_task = None
+
+    def _extract_response_key(self, data: dict, *, create_fallback: bool = False) -> Optional[str]:
+        response = data.get("response")
+        if isinstance(response, dict):
+            response_id = response.get("id")
+            if response_id:
+                key = str(response_id)
+                self.active_response_key = key
+                return key
+
+        response_id = data.get("response_id") or data.get("responseId")
+        if response_id:
+            key = str(response_id)
+            self.active_response_key = key
+            return key
+
+        if self.active_response_key:
+            return self.active_response_key
+
+        if create_fallback:
+            self.active_response_key = "active"
+            return self.active_response_key
+
+        return None
+
+    def _mark_response_started(self, data: dict):
+        response_key = self._extract_response_key(data, create_fallback=True)
+        if not response_key:
+            return
+        self.response_transcripts[response_key] = ""
+        self.responses_with_queued_background.discard(response_key)
+
+    def _should_queue_realtime_background_early(self, transcript: str) -> bool:
+        text = transcript.strip()
+        if not text:
+            return False
+
+        if len(text) >= REALTIME_BG_MIN_CHARS:
+            return True
+
+        sentence_match = re.search(r"[.!?。！？](?:\s|$)", text)
+        if sentence_match and sentence_match.start() + 1 >= REALTIME_BG_MIN_SENTENCE_CHARS:
+            return True
+
+        return False
+
+    def _queue_background_update(self, transcript: str, trigger_source: str):
+        text = transcript.strip()
+        if not text:
+            return
+
+        self._cancel_pending_background_task()
+        logger.info(
+            f"🖼️ Queueing background update ({trigger_source}) for client #{self.connection_id}"
+        )
+        self.pending_background_task = asyncio.create_task(
+            update_background_if_needed(self.connection_id, text, self.client_ws)
+        )
+
+    def _maybe_queue_realtime_background_update(self, data: dict, trigger_source: str):
+        response_key = self._extract_response_key(data, create_fallback=True)
+        if not response_key:
+            return
+
+        transcript = self.response_transcripts.get(response_key, "").strip()
+        if not transcript:
+            return
+
+        if response_key in self.responses_with_queued_background:
+            return
+
+        if not self._should_queue_realtime_background_early(transcript):
+            return
+
+        self.responses_with_queued_background.add(response_key)
+        self._queue_background_update(transcript, trigger_source)
+
+    def _finalize_realtime_background_update(self, data: dict):
+        response_key = self._extract_response_key(data, create_fallback=False)
+        if not response_key:
+            response_key = self.active_response_key or "active"
+
+        transcript = self.response_transcripts.get(response_key, "").strip()
+        if transcript and response_key not in self.responses_with_queued_background:
+            self.responses_with_queued_background.add(response_key)
+            self._queue_background_update(transcript, "realtime_response_done")
+
+        self.response_transcripts.pop(response_key, None)
+        self.responses_with_queued_background.discard(response_key)
+        if self.active_response_key == response_key:
+            self.active_response_key = None
+
+    def _reset_realtime_response_state(self):
+        self.active_response_key = None
+        self.response_transcripts.clear()
+        self.responses_with_queued_background.clear()
     
     async def connect_to_grok(self):
         """Establish connection to Grok Realtime API"""
@@ -564,6 +848,8 @@ class GrokRelay:
                             "type": "response.cancel"
                         }))
                         logger.info(f"⏹️ Cancelled in-progress response for client #{self.connection_id}")
+                        self._cancel_pending_background_task()
+                        self._reset_realtime_response_state()
 
                     # Build system instructions for vision (keep personality)
                     lang_config = LANGUAGE_CONFIG.get(self.language, LANGUAGE_CONFIG['en'])
@@ -656,18 +942,40 @@ class GrokRelay:
                                 logger.info(f"⏹️ Barge-in: cancelled AI response for client #{self.connection_id}")
                             except Exception as e:
                                 logger.error(f"Failed to cancel response on barge-in: {e}")
-                        # Reset accumulated transcript since response is being cut off
-                        self.accumulated_transcript = ""
+                        self._cancel_pending_background_task()
+                        self._reset_realtime_response_state()
                     elif msg_type == "input_audio_buffer.speech_stopped":
                         logger.info(f"🔇 Speech ended for client #{self.connection_id}")
                     elif msg_type == "error":
                         logger.error(f"❌ Grok error: {json.dumps(data, indent=2)}")
+                    elif msg_type == "response.created":
+                        self._mark_response_started(data)
                     elif msg_type == "response.audio_transcript.delta":
                         if delta := data.get("delta"):
                             print(delta, end="", flush=True)
-                            self.accumulated_transcript += delta
+                            response_key = self._extract_response_key(data, create_fallback=True)
+                            if response_key:
+                                self.response_transcripts[response_key] = (
+                                    self.response_transcripts.get(response_key, "") + delta
+                                )
+                            self._maybe_queue_realtime_background_update(
+                                data,
+                                "realtime_transcript_balanced",
+                            )
                     elif msg_type == "response.audio_transcript.done":
                         print()  # Newline after transcript
+
+                        response_key = self._extract_response_key(data, create_fallback=True)
+                        transcript_done = str(data.get("transcript", "") or "")
+                        if response_key and transcript_done:
+                            current_transcript = self.response_transcripts.get(response_key, "")
+                            if len(transcript_done) >= len(current_transcript):
+                                self.response_transcripts[response_key] = transcript_done
+
+                        self._maybe_queue_realtime_background_update(
+                            data,
+                            "realtime_transcript_done",
+                        )
                         
                         # Translate to English if needed
                         if self.language != 'en' and data.get("transcript"):
@@ -677,22 +985,7 @@ class GrokRelay:
                             logger.info(f"🌐 Translated: {transcript[:30]}... -> {english_translation[:30]}...")
                     elif msg_type == "response.done":
                         logger.info(f"✅ Response complete for client #{self.connection_id}")
-                        
-                        # Check for topic change and update background (non-blocking)
-                        if self.accumulated_transcript:
-                            transcript_for_analysis = self.accumulated_transcript
-                            self.accumulated_transcript = ""  # Reset for next response
-                            
-                            # Start background generation task (don't await - let it run in background)
-                            if self.pending_background_task:
-                                self.pending_background_task.cancel()
-                            self.pending_background_task = asyncio.create_task(
-                                update_background_if_needed(
-                                    self.connection_id,
-                                    transcript_for_analysis,
-                                    self.client_ws
-                                )
-                            )
+                        self._finalize_realtime_background_update(data)
                     
                     # Forward to client
                     await self.client_ws.send_json(data)
@@ -709,8 +1002,8 @@ class GrokRelay:
         self.is_connected = False
         
         # Cancel pending background task
-        if self.pending_background_task:
-            self.pending_background_task.cancel()
+        self._cancel_pending_background_task()
+        self._reset_realtime_response_state()
         
         for task in self.tasks:
             task.cancel()
@@ -726,21 +1019,485 @@ class GrokRelay:
             del dynamic_bg_enabled[self.connection_id]
 
 
+class MoonshineTranscriptListener(TranscriptEventListener):
+    """Bridge Moonshine transcript callbacks into async relay events."""
+
+    def __init__(self, relay: "LocalPipelineRelay"):
+        self.relay = relay
+
+    def on_line_started(self, event):
+        self.relay.on_line_started(event.line)
+
+    def on_line_completed(self, event):
+        self.relay.on_line_completed(event.line)
+
+    def on_error(self, event):
+        self.relay.on_transcriber_error(event.error)
+
+
+class LocalPipelineRelay:
+    """Local Moonshine STT -> Grok chat -> Grok streaming TTS relay."""
+
+    def __init__(self, client_ws: WebSocket, connection_id: int, language: str = LOCAL_PIPELINE_LANGUAGE):
+        self.client_ws = client_ws
+        self.connection_id = connection_id
+        self.language = LOCAL_PIPELINE_LANGUAGE
+        self.requires_grok_listener = False
+        self.is_connected = False
+        self.closed = False
+
+        self.loop = asyncio.get_running_loop()
+        self.transcriber = None
+        self.transcript_listener: Optional[MoonshineTranscriptListener] = None
+
+        self.is_user_speaking = False
+        self.completed_line_ids: set[int] = set()
+
+        self.active_response_task: Optional[asyncio.Task] = None
+        self.pending_background_task: Optional[asyncio.Task] = None
+        self.conversation_history: list[dict] = []
+
+    async def connect_to_grok(self):
+        """Initialize local STT/TTS pipeline and notify the client."""
+        if not XAI_API_KEY:
+            await self._safe_send_json({
+                "type": "error",
+                "error": {"message": "XAI_API_KEY is missing. Set it in .env."},
+            })
+            return False
+
+        if not MOONSHINE_AVAILABLE:
+            await self._safe_send_json({
+                "type": "error",
+                "error": {
+                    "message": "Moonshine dependency is unavailable.",
+                    "details": MOONSHINE_IMPORT_ERROR,
+                },
+            })
+            return False
+
+        try:
+            model_path, model_arch = await asyncio.to_thread(ensure_moonshine_medium_streaming_model)
+
+            self.transcriber = Transcriber(
+                model_path=model_path,
+                model_arch=model_arch,
+                update_interval=0.25,
+            )
+            self.transcript_listener = MoonshineTranscriptListener(self)
+            self.transcriber.add_listener(self.transcript_listener)
+            self.transcriber.start()
+
+            self.is_connected = True
+            dynamic_bg_enabled[self.connection_id] = True
+
+            await self._safe_send_json({
+                "type": "connection.ready",
+                "message": "Connected to local Moonshine STT + Grok streaming TTS",
+                "mode": PIPELINE_LOCAL_STT_TTS,
+            })
+
+            logger.info(f"✅ Local pipeline ready for client #{self.connection_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize local pipeline: {e}")
+            await self._safe_send_json({
+                "type": "error",
+                "error": {
+                    "message": "Failed to initialize Moonshine STT pipeline",
+                    "details": str(e),
+                },
+            })
+            return False
+
+    async def forward_to_client(self):
+        """Local mode does not require a separate upstream listener task."""
+        return
+
+    async def forward_to_grok(self, data: bytes | str):
+        """Handle client audio/text input for local pipeline mode."""
+        if self.closed:
+            return
+
+        try:
+            if isinstance(data, bytes):
+                await self._handle_audio_bytes(data)
+            else:
+                await self._handle_text_message(data)
+        except Exception as e:
+            logger.error(f"❌ Local pipeline forward error: {e}")
+
+    async def _handle_audio_bytes(self, audio_bytes: bytes):
+        if not self.transcriber or not self.is_connected:
+            return
+
+        samples = pcm16le_bytes_to_float32(audio_bytes)
+        if not samples:
+            return
+
+        self.transcriber.add_audio(samples, 24000)
+
+    async def _handle_text_message(self, payload: str):
+        message = json.loads(payload)
+        msg_type = message.get("type", "")
+
+        if msg_type == "connect":
+            return
+
+        if msg_type == "language.change":
+            # Local STT/TTS path is currently English-only.
+            requested = message.get("language", LOCAL_PIPELINE_LANGUAGE)
+            if requested != LOCAL_PIPELINE_LANGUAGE:
+                logger.info(
+                    f"🌐 Ignoring non-English local language change request ({requested}) for client #{self.connection_id}"
+                )
+            self.language = LOCAL_PIPELINE_LANGUAGE
+            return
+
+        if msg_type == "dynamic_bg.toggle":
+            enabled = message.get("enabled", True)
+            dynamic_bg_enabled[self.connection_id] = enabled
+            logger.info(
+                f"🖼️ Dynamic backgrounds {'enabled' if enabled else 'disabled'} for local client #{self.connection_id}"
+            )
+            return
+
+        if msg_type == "vision.query":
+            await self._handle_vision_query(message)
+            return
+
+        if msg_type == "conversation.item.create":
+            user_text = extract_user_input_text(message)
+            if user_text:
+                await self._safe_send_json({
+                    "type": "conversation.item.input_audio_transcription.completed",
+                    "transcript": user_text,
+                })
+                self._start_response_task(user_text)
+            return
+
+        if msg_type == "response.create":
+            # Text responses are started when user input is received.
+            return
+
+    async def _handle_vision_query(self, message: dict):
+        image_b64 = message.get("image", "")
+        query_text = message.get("query", "What do you see?")
+        logger.info(f"👁️ Vision query (local pipeline) from client #{self.connection_id}: {query_text}")
+
+        self._cancel_active_response_task(notify_client=True)
+
+        vision_instructions = (
+            build_local_stt_tts_instructions()
+            + "\n\nThe user is showing you something through their webcam. "
+            + "Describe what you see naturally and stay in character. Keep it to 2-3 sentences."
+        )
+
+        vision_response = await analyze_vision_query(image_b64, query_text, vision_instructions)
+
+        await self._safe_send_json({
+            "type": "vision.response",
+            "text": vision_response,
+        })
+
+        # Keep the conversation coherent across turns.
+        self._start_response_task(
+            user_text=f"[Vision query] {query_text}",
+            assistant_override=vision_response,
+        )
+
+    def on_line_started(self, line):
+        if self.closed:
+            return
+
+        if not self.is_user_speaking:
+            self.is_user_speaking = True
+            self._cancel_active_response_task(notify_client=True)
+            self._schedule_coroutine(
+                self._safe_send_json({"type": "input_audio_buffer.speech_started"})
+            )
+
+    def on_line_completed(self, line):
+        if self.closed:
+            return
+
+        self.is_user_speaking = False
+        self._schedule_coroutine(
+            self._safe_send_json({"type": "input_audio_buffer.speech_stopped"})
+        )
+
+        line_id = getattr(line, "line_id", None)
+        if isinstance(line_id, int):
+            if line_id in self.completed_line_ids:
+                return
+            self.completed_line_ids.add(line_id)
+
+        text = str(getattr(line, "text", "") or "").strip()
+        if not text:
+            return
+
+        self._schedule_coroutine(
+            self._safe_send_json({
+                "type": "conversation.item.input_audio_transcription.completed",
+                "transcript": text,
+            })
+        )
+        self._start_response_task(text)
+
+    def on_transcriber_error(self, error: Exception):
+        logger.error(f"❌ Moonshine transcription error for client #{self.connection_id}: {error}")
+        self._schedule_coroutine(
+            self._safe_send_json({
+                "type": "error",
+                "error": {
+                    "message": "Local speech transcription failed",
+                    "details": str(error),
+                },
+            })
+        )
+
+    def _schedule_coroutine(self, coro):
+        if self.closed:
+            return
+
+        def _runner():
+            self.loop.create_task(coro)
+
+        self.loop.call_soon_threadsafe(_runner)
+
+    async def _safe_send_json(self, payload: dict):
+        if self.closed:
+            return
+        try:
+            await self.client_ws.send_json(payload)
+        except Exception:
+            # Connection may already be closing.
+            pass
+
+    def _cancel_active_response_task(self, notify_client: bool):
+        if self.active_response_task and not self.active_response_task.done():
+            self.active_response_task.cancel()
+            if notify_client:
+                self._schedule_coroutine(self._safe_send_json({"type": "response.done"}))
+        self._cancel_pending_background_task()
+        self.active_response_task = None
+
+    def _start_response_task(self, user_text: str, assistant_override: Optional[str] = None):
+        self._cancel_active_response_task(notify_client=False)
+        self.active_response_task = self.loop.create_task(
+            self._respond_to_user(user_text, assistant_override=assistant_override)
+        )
+
+    async def _respond_to_user(self, user_text: str, assistant_override: Optional[str] = None):
+        assistant_text = ""
+        sent_response_created = False
+
+        try:
+            await self._safe_send_json({"type": "response.created"})
+            sent_response_created = True
+
+            if assistant_override is not None:
+                assistant_text = assistant_override.strip()
+            else:
+                assistant_text = await self._call_grok_chat(user_text)
+
+            if not assistant_text:
+                assistant_text = "Sorry, I could not generate a response right now."
+
+            self._append_history("user", user_text)
+            self._append_history("assistant", assistant_text)
+
+            await self._safe_send_json({
+                "type": "response.audio_transcript.delta",
+                "delta": assistant_text,
+            })
+            await self._safe_send_json({
+                "type": "response.audio_transcript.done",
+                "transcript": assistant_text,
+            })
+
+            if assistant_text:
+                self._queue_background_update(assistant_text, "local_response_start")
+
+            await self._stream_tts_audio(assistant_text)
+        except asyncio.CancelledError:
+            logger.info(f"⏹️ Cancelled active local response for client #{self.connection_id}")
+            raise
+        except Exception as e:
+            logger.error(f"❌ Local response pipeline error for client #{self.connection_id}: {e}")
+            await self._safe_send_json({
+                "type": "error",
+                "error": {
+                    "message": "Local STT/TTS pipeline failed",
+                    "details": str(e),
+                },
+            })
+        finally:
+            if sent_response_created:
+                await self._safe_send_json({"type": "response.done"})
+
+    async def _call_grok_chat(self, user_text: str) -> str:
+        messages = [{"role": "system", "content": build_local_stt_tts_instructions()}]
+        messages.extend(self.conversation_history)
+        messages.append({"role": "user", "content": user_text})
+
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(
+                GROK_CHAT_URL,
+                headers={
+                    "Authorization": f"Bearer {XAI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "grok-4-1-fast-non-reasoning",
+                    "messages": messages,
+                    "temperature": 0.7,
+                },
+            )
+
+        if response.status_code != 200:
+            raise RuntimeError(f"Grok chat failed: {response.status_code} - {response.text}")
+
+        data = response.json()
+        return (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+
+    async def _stream_tts_audio(self, text: str):
+        if not text:
+            return
+
+        tts_voice = (VOICE or "eve").lower()
+        tts_url = (
+            f"{GROK_TTS_WS_URL}?language={LOCAL_PIPELINE_LANGUAGE}"
+            f"&voice={tts_voice}&codec=pcm&sample_rate=24000"
+        )
+
+        headers = {"Authorization": f"Bearer {XAI_API_KEY}"}
+
+        async with websockets.connect(
+            tts_url,
+            additional_headers=headers,
+            ping_interval=20,
+            ping_timeout=20,
+        ) as tts_ws:
+            for chunk in chunk_text_for_tts(text):
+                await tts_ws.send(json.dumps({"type": "text.delta", "delta": chunk}))
+
+            await tts_ws.send(json.dumps({"type": "text.done"}))
+
+            async for raw_message in tts_ws:
+                event = json.loads(raw_message)
+                event_type = event.get("type")
+
+                if event_type == "audio.delta":
+                    delta = event.get("delta", "")
+                    if delta:
+                        await self._safe_send_json({
+                            "type": "response.audio.delta",
+                            "delta": delta,
+                        })
+                elif event_type == "audio.done":
+                    break
+                elif event_type == "error":
+                    raise RuntimeError(event.get("message", "Unknown TTS error"))
+
+    def _append_history(self, role: str, content: str):
+        self.conversation_history.append({"role": role, "content": content})
+        # Keep context bounded to reduce latency and cost.
+        if len(self.conversation_history) > 16:
+            self.conversation_history = self.conversation_history[-16:]
+
+    def _cancel_pending_background_task(self):
+        if self.pending_background_task and not self.pending_background_task.done():
+            self.pending_background_task.cancel()
+        self.pending_background_task = None
+
+    def _queue_background_update(self, transcript: str, trigger_source: str):
+        text = transcript.strip()
+        if not text:
+            return
+
+        self._cancel_pending_background_task()
+        logger.info(
+            f"🖼️ Queueing background update ({trigger_source}) for local client #{self.connection_id}"
+        )
+
+        self.pending_background_task = asyncio.create_task(
+            update_background_if_needed(self.connection_id, text, self.client_ws)
+        )
+
+    async def close(self):
+        self.closed = True
+        self.is_connected = False
+
+        self._cancel_pending_background_task()
+
+        if self.active_response_task and not self.active_response_task.done():
+            self.active_response_task.cancel()
+            try:
+                await self.active_response_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+
+        if self.transcriber:
+            try:
+                self.transcriber.stop()
+            except Exception:
+                pass
+
+            try:
+                self.transcriber.close()
+            except Exception:
+                pass
+
+            self.transcriber = None
+
+        if self.connection_id in conversation_topics:
+            del conversation_topics[self.connection_id]
+        if self.connection_id in dynamic_bg_enabled:
+            del dynamic_bg_enabled[self.connection_id]
+
+
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, language: str = Query(default='en')):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    language: str = Query(default='en'),
+    mode: str = Query(default=PIPELINE_REALTIME_AGENT),
+):
     """WebSocket endpoint for client connections"""
     global connection_count
+
+    # Validate pipeline mode.
+    if mode not in SUPPORTED_PIPELINE_MODES:
+        logger.warning(f"⚠️ Unsupported pipeline mode '{mode}', falling back to realtime")
+        mode = PIPELINE_REALTIME_AGENT
     
     # Validate language
     if language not in LANGUAGE_CONFIG:
         language = 'en'
+
+    # Local STT/TTS path is English-only for now.
+    if mode == PIPELINE_LOCAL_STT_TTS:
+        language = LOCAL_PIPELINE_LANGUAGE
     
     await websocket.accept()
     connection_count += 1
     connection_id = connection_count
-    logger.info(f"\n🔌 Client #{connection_id} connected (Language: {LANGUAGE_CONFIG[language]['name']})")
-    
-    relay = GrokRelay(websocket, connection_id, language)
+    logger.info(
+        f"\n🔌 Client #{connection_id} connected "
+        f"(Language: {LANGUAGE_CONFIG[language]['name']}, Mode: {mode})"
+    )
+
+    if mode == PIPELINE_LOCAL_STT_TTS:
+        relay = LocalPipelineRelay(websocket, connection_id, language)
+    else:
+        relay = GrokRelay(websocket, connection_id, language)
     
     try:
         # Connect to Grok
@@ -748,9 +1505,10 @@ async def websocket_endpoint(websocket: WebSocket, language: str = Query(default
             await websocket.close()
             return
         
-        # Start listening to Grok in background
-        grok_listener = asyncio.create_task(relay.forward_to_client())
-        relay.tasks.append(grok_listener)
+        # Start listening to Grok in background for realtime mode only.
+        if relay.requires_grok_listener:
+            grok_listener = asyncio.create_task(relay.forward_to_client())
+            relay.tasks.append(grok_listener)
         
         # Handle client messages
         while True:
@@ -777,7 +1535,9 @@ async def health_check():
     return JSONResponse({
         "status": "ok",
         "api_key_configured": bool(XAI_API_KEY),
-        "voice": VOICE
+        "voice": VOICE,
+        "moonshine_available": MOONSHINE_AVAILABLE,
+        "moonshine_model_ready": bool(MOONSHINE_MODEL_PATH),
     })
 
 
@@ -786,7 +1546,12 @@ async def get_config():
     return JSONResponse({
         "voice": VOICE,
         "wsUrl": f"ws://localhost:{PORT}/ws",
-        "languages": {code: config['name'] for code, config in LANGUAGE_CONFIG.items()}
+        "languages": {code: config['name'] for code, config in LANGUAGE_CONFIG.items()},
+        "pipelines": {
+            PIPELINE_REALTIME_AGENT: "Grok Voice Agent",
+            PIPELINE_LOCAL_STT_TTS: "Moonshine STT + Grok TTS",
+        },
+        "defaultPipeline": PIPELINE_REALTIME_AGENT,
     })
 
 

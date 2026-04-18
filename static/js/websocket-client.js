@@ -75,6 +75,7 @@ class GrokWebSocketClient {
         this.volumeCheckInterval = null;
         this.currentVolume = 0;
         this.selectedLanguage = 'en';
+        this.pipelineMode = 'realtime_agent';
         
         // Audio config (24kHz is xAI's default and most reliable)
         this.SAMPLE_RATE = 24000;
@@ -84,37 +85,57 @@ class GrokWebSocketClient {
     /**
      * Connect to WebSocket server
      */
-    async connect(language = 'en') {
+    async connect(language = 'en', pipelineMode = 'realtime_agent') {
         if (this.ws?.readyState === WebSocket.OPEN) {
             console.log('Already connected');
             return;
         }
         
         this.selectedLanguage = language;
+        this.pipelineMode = pipelineMode;
         this.setState('connecting');
         
         return new Promise((resolve, reject) => {
             try {
-                // Add language as query parameter
-                const wsUrlWithLang = `${this.wsUrl}?language=${language}`;
-                this.ws = new WebSocket(wsUrlWithLang);
+                // Add language and pipeline mode as query parameters
+                const separator = this.wsUrl.includes('?') ? '&' : '?';
+                const wsUrlWithParams =
+                    `${this.wsUrl}${separator}language=${encodeURIComponent(language)}` +
+                    `&mode=${encodeURIComponent(pipelineMode)}`;
+                const socket = new WebSocket(wsUrlWithParams);
+                this.ws = socket;
                 
-                this.ws.onopen = () => {
+                socket.onopen = () => {
+                    if (this.ws !== socket) {
+                        return;
+                    }
                     console.log('✅ Connected to WebSocket server');
                     this.setState('connected');
                     resolve();
                 };
                 
-                this.ws.onmessage = (event) => this.handleMessage(event);
+                socket.onmessage = (event) => {
+                    if (this.ws !== socket) {
+                        return;
+                    }
+                    this.handleMessage(event);
+                };
                 
-                this.ws.onerror = (error) => {
+                socket.onerror = (error) => {
+                    if (this.ws !== socket) {
+                        return;
+                    }
                     console.error('❌ WebSocket error:', error);
                     this.onError({ type: 'websocket', error });
                     reject(error);
                 };
                 
-                this.ws.onclose = (event) => {
+                socket.onclose = (event) => {
+                    if (this.ws !== socket) {
+                        return;
+                    }
                     console.log('🔌 WebSocket closed:', event.code);
+                    this.ws = null;
                     this.setState('disconnected');
                     this.cleanup();
                 };
@@ -145,9 +166,15 @@ class GrokWebSocketClient {
      * Disconnect
      */
     disconnect() {
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
+        const socket = this.ws;
+        this.ws = null;
+
+        if (socket) {
+            socket.onopen = null;
+            socket.onmessage = null;
+            socket.onerror = null;
+            socket.onclose = null;
+            socket.close();
         }
         this.cleanup();
         this.setState('disconnected');
