@@ -25,7 +25,8 @@ from dotenv import load_dotenv
 import websockets
 from deep_translator import GoogleTranslator
 
-# Grok Imagine API configuration
+# Grok API configurations
+GROK_REALTIME_URL = "wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-1.0"
 GROK_IMAGINE_URL = "https://api.x.ai/v1/images/generations"
 GROK_CHAT_URL = "https://api.x.ai/v1/chat/completions"
 GROK_TTS_WS_URL = "wss://api.x.ai/v1/tts"
@@ -157,7 +158,6 @@ LANGUAGE_CONFIG = {
 }
 
 PORT = int(os.getenv("PORT", 8080))
-GROK_REALTIME_URL = "wss://api.x.ai/v1/realtime"  # No model param needed per current docs
 
 # Setup logging
 logging.basicConfig(
@@ -751,8 +751,8 @@ class GrokRelay:
         
         logger.info(f"🌐 Configuring session for language: {lang_config['name']}")
         
-        # Format voice name for API (capitalize first letter)
-        formatted_voice = VOICE.capitalize()
+        # Format voice name for API (lowercase)
+        formatted_voice = VOICE.lower()
         logger.info(f"🎤 Using voice: {formatted_voice}")
         
         session_update = {
