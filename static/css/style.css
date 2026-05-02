@@ -547,6 +547,37 @@ body {
     color: white;
 }
 
+/* Gender Filter Buttons */
+.gender-filter {
+    display: flex;
+    gap: 6px;
+}
+
+.gender-btn {
+    flex: 1;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    font-size: 13px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.gender-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: white;
+}
+
+.gender-btn.active {
+    border-color: rgba(102, 126, 234, 0.9);
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.45) 0%, rgba(118, 75, 162, 0.45) 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
 .modal-body textarea {
     padding: 12px 14px;
     border-radius: 8px;

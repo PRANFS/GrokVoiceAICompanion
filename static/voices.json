@@ -1,0 +1,716 @@
+{
+  "voices": [
+    {
+      "id": "ara",
+      "name": "Ara",
+      "gender": "female",
+      "language": "Multilingual",
+      "base_language": null,
+      "multilingual": true
+    },
+    {
+      "id": "eve",
+      "name": "Eve",
+      "gender": "female",
+      "language": "Multilingual",
+      "base_language": null,
+      "multilingual": true
+    },
+    {
+      "id": "leo",
+      "name": "Leo",
+      "gender": "male",
+      "language": "Multilingual",
+      "base_language": null,
+      "multilingual": true
+    },
+    {
+      "id": "rex",
+      "name": "Rex",
+      "gender": "male",
+      "language": "Multilingual",
+      "base_language": null,
+      "multilingual": true
+    },
+    {
+      "id": "sal",
+      "name": "Sal",
+      "gender": "male",
+      "language": "Multilingual",
+      "base_language": null,
+      "multilingual": true
+    },
+    {
+      "id": "f4b9d6fc",
+      "name": "Omar",
+      "gender": "male",
+      "language": "Arabic",
+      "base_language": "ar",
+      "multilingual": false
+    },
+    {
+      "id": "5f0c2251",
+      "name": "Youssef",
+      "gender": "male",
+      "language": "Arabic",
+      "base_language": "ar",
+      "multilingual": false
+    },
+    {
+      "id": "025a38c5",
+      "name": "Yasmin",
+      "gender": "female",
+      "language": "Arabic",
+      "base_language": "ar",
+      "multilingual": false
+    },
+    {
+      "id": "e1b1007e",
+      "name": "Rohan",
+      "gender": "male",
+      "language": "Bangla",
+      "base_language": "bn",
+      "multilingual": false
+    },
+    {
+      "id": "a2aa4b79",
+      "name": "Pooja",
+      "gender": "female",
+      "language": "Bangla",
+      "base_language": "bn",
+      "multilingual": false
+    },
+    {
+      "id": "57b26f54",
+      "name": "Anika",
+      "gender": "female",
+      "language": "Bangla",
+      "base_language": "bn",
+      "multilingual": false
+    },
+    {
+      "id": "0b54c30d",
+      "name": "Tanvir",
+      "gender": "male",
+      "language": "Bangla",
+      "base_language": "bn",
+      "multilingual": false
+    },
+    {
+      "id": "e5d4f53e",
+      "name": "Pol",
+      "gender": "male",
+      "language": "Catalan (Spain)",
+      "base_language": "ca",
+      "multilingual": false
+    },
+    {
+      "id": "c630b236",
+      "name": "Jordi",
+      "gender": "male",
+      "language": "Catalan (Spain)",
+      "base_language": "ca",
+      "multilingual": false
+    },
+    {
+      "id": "4d3af3e1",
+      "name": "Mireia",
+      "gender": "female",
+      "language": "Catalan (Spain)",
+      "base_language": "ca",
+      "multilingual": false
+    },
+    {
+      "id": "155d4e9b",
+      "name": "Nuria",
+      "gender": "female",
+      "language": "Catalan (Spain)",
+      "base_language": "ca",
+      "multilingual": false
+    },
+    {
+      "id": "e521cc67",
+      "name": "Hui",
+      "gender": "female",
+      "language": "Chinese",
+      "base_language": "zh",
+      "multilingual": false
+    },
+    {
+      "id": "9ab26871",
+      "name": "Wei",
+      "gender": "male",
+      "language": "Chinese",
+      "base_language": "zh",
+      "multilingual": false
+    },
+    {
+      "id": "6997b0ec",
+      "name": "Yang",
+      "gender": "male",
+      "language": "Chinese",
+      "base_language": "zh",
+      "multilingual": false
+    },
+    {
+      "id": "09b02491",
+      "name": "Mei",
+      "gender": "female",
+      "language": "Chinese",
+      "base_language": "zh",
+      "multilingual": false
+    },
+    {
+      "id": "cfccf16b",
+      "name": "Mads",
+      "gender": "male",
+      "language": "Danish (Denmark)",
+      "base_language": "da",
+      "multilingual": false
+    },
+    {
+      "id": "a69bdfe7",
+      "name": "Astrid",
+      "gender": "female",
+      "language": "Danish (Denmark)",
+      "base_language": "da",
+      "multilingual": false
+    },
+    {
+      "id": "524f4cb1",
+      "name": "Lucas",
+      "gender": "male",
+      "language": "Danish (Denmark)",
+      "base_language": "da",
+      "multilingual": false
+    },
+    {
+      "id": "47519c37",
+      "name": "Freja",
+      "gender": "female",
+      "language": "Danish (Denmark)",
+      "base_language": "da",
+      "multilingual": false
+    },
+    {
+      "id": "ef4ce33e",
+      "name": "Daan",
+      "gender": "male",
+      "language": "Dutch (Netherlands)",
+      "base_language": "nl",
+      "multilingual": false
+    },
+    {
+      "id": "cdb1cec8",
+      "name": "Lieke",
+      "gender": "female",
+      "language": "Dutch (Netherlands)",
+      "base_language": "nl",
+      "multilingual": false
+    },
+    {
+      "id": "6fe32f8a",
+      "name": "Sophie",
+      "gender": "female",
+      "language": "Dutch (Netherlands)",
+      "base_language": "nl",
+      "multilingual": false
+    },
+    {
+      "id": "18245f0d",
+      "name": "Bas",
+      "gender": "male",
+      "language": "Dutch (Netherlands)",
+      "base_language": "nl",
+      "multilingual": false
+    },
+    {
+      "id": "c3cdb7a4",
+      "name": "Bram",
+      "gender": "male",
+      "language": "Flemish",
+      "base_language": "nl",
+      "multilingual": false
+    },
+    {
+      "id": "aedba6b4",
+      "name": "Jeroen",
+      "gender": "male",
+      "language": "Flemish",
+      "base_language": "nl",
+      "multilingual": false
+    },
+    {
+      "id": "3b7f37c9",
+      "name": "Anke",
+      "gender": "female",
+      "language": "Flemish",
+      "base_language": "nl",
+      "multilingual": false
+    },
+    {
+      "id": "f15c6a6a",
+      "name": "Henry",
+      "gender": "male",
+      "language": "English (British)",
+      "base_language": "en",
+      "multilingual": false
+    },
+    {
+      "id": "d11249e6",
+      "name": "Emma",
+      "gender": "female",
+      "language": "English (American)",
+      "base_language": "en",
+      "multilingual": false
+    },
+    {
+      "id": "bedd6226",
+      "name": "Olivia",
+      "gender": "female",
+      "language": "English (British)",
+      "base_language": "en",
+      "multilingual": false
+    },
+    {
+      "id": "a7b78b05",
+      "name": "Sean",
+      "gender": "male",
+      "language": "English (Ireland)",
+      "base_language": "en",
+      "multilingual": false
+    },
+    {
+      "id": "6a41d324",
+      "name": "Liam",
+      "gender": "male",
+      "language": "English (American)",
+      "base_language": "en",
+      "multilingual": false
+    },
+    {
+      "id": "5d695b41",
+      "name": "Marc",
+      "gender": "male",
+      "language": "English (South Africa)",
+      "base_language": "en",
+      "multilingual": false
+    },
+    {
+      "id": "355dca53",
+      "name": "Niamh",
+      "gender": "female",
+      "language": "English (Ireland)",
+      "base_language": "en",
+      "multilingual": false
+    },
+    {
+      "id": "135ff7ec",
+      "name": "Thandi",
+      "gender": "female",
+      "language": "English (South Africa)",
+      "base_language": "en",
+      "multilingual": false
+    },
+    {
+      "id": "f702f406",
+      "name": "Olli",
+      "gender": "male",
+      "language": "Finnish (Finland)",
+      "base_language": "fi",
+      "multilingual": false
+    },
+    {
+      "id": "9ec6157c",
+      "name": "Aino",
+      "gender": "female",
+      "language": "Finnish (Finland)",
+      "base_language": "fi",
+      "multilingual": false
+    },
+    {
+      "id": "5e3e2cbe",
+      "name": "Mikko",
+      "gender": "male",
+      "language": "Finnish (Finland)",
+      "base_language": "fi",
+      "multilingual": false
+    },
+    {
+      "id": "3a3e080c",
+      "name": "Sofia",
+      "gender": "female",
+      "language": "Finnish (Finland)",
+      "base_language": "fi",
+      "multilingual": false
+    },
+    {
+      "id": "eacafe1e",
+      "name": "Vincent",
+      "gender": "male",
+      "language": "French (Belgium)",
+      "base_language": "fr",
+      "multilingual": false
+    },
+    {
+      "id": "4d9e4c6f",
+      "name": "Mathieu",
+      "gender": "male",
+      "language": "French (Belgium)",
+      "base_language": "fr",
+      "multilingual": false
+    },
+    {
+      "id": "45357fd3",
+      "name": "Mathilde",
+      "gender": "female",
+      "language": "French (Belgium)",
+      "base_language": "fr",
+      "multilingual": false
+    },
+    {
+      "id": "01a7edae",
+      "name": "Chloe",
+      "gender": "female",
+      "language": "French (Belgium)",
+      "base_language": "fr",
+      "multilingual": false
+    },
+    {
+      "id": "e1fc5a89",
+      "name": "Felix",
+      "gender": "male",
+      "language": "German",
+      "base_language": "de",
+      "multilingual": false
+    },
+    {
+      "id": "44c91d64",
+      "name": "Sonja",
+      "gender": "female",
+      "language": "German",
+      "base_language": "de",
+      "multilingual": false
+    },
+    {
+      "id": "bcf738e4",
+      "name": "Vihaan",
+      "gender": "male",
+      "language": "Hindi",
+      "base_language": "hi",
+      "multilingual": false
+    },
+    {
+      "id": "a00ce99a",
+      "name": "Priya",
+      "gender": "female",
+      "language": "Hindi",
+      "base_language": "hi",
+      "multilingual": false
+    },
+    {
+      "id": "0735ff93",
+      "name": "Diya",
+      "gender": "female",
+      "language": "Hindi",
+      "base_language": "hi",
+      "multilingual": false
+    },
+    {
+      "id": "9efdd836",
+      "name": "Istvan",
+      "gender": "male",
+      "language": "Hungarian (Hungary)",
+      "base_language": "hu",
+      "multilingual": false
+    },
+    {
+      "id": "7160ae2c",
+      "name": "Krisztina",
+      "gender": "female",
+      "language": "Hungarian (Hungary)",
+      "base_language": "hu",
+      "multilingual": false
+    },
+    {
+      "id": "681cd005",
+      "name": "Gabor",
+      "gender": "male",
+      "language": "Hungarian (Hungary)",
+      "base_language": "hu",
+      "multilingual": false
+    },
+    {
+      "id": "6583fcc2",
+      "name": "Eszter",
+      "gender": "female",
+      "language": "Hungarian (Hungary)",
+      "base_language": "hu",
+      "multilingual": false
+    },
+    {
+      "id": "a656d78f",
+      "name": "Budi",
+      "gender": "male",
+      "language": "Indonesian",
+      "base_language": "id",
+      "multilingual": false
+    },
+    {
+      "id": "7f989258",
+      "name": "Adi",
+      "gender": "male",
+      "language": "Indonesian",
+      "base_language": "id",
+      "multilingual": false
+    },
+    {
+      "id": "20fa3f2e",
+      "name": "Sri",
+      "gender": "female",
+      "language": "Indonesian",
+      "base_language": "id",
+      "multilingual": false
+    },
+    {
+      "id": "07e283bf",
+      "name": "Aisyah",
+      "gender": "female",
+      "language": "Indonesian",
+      "base_language": "id",
+      "multilingual": false
+    },
+    {
+      "id": "57700f39",
+      "name": "Leon",
+      "gender": "male",
+      "language": "Italian",
+      "base_language": "it",
+      "multilingual": false
+    },
+    {
+      "id": "43423dee",
+      "name": "Giulia",
+      "gender": "female",
+      "language": "Italian",
+      "base_language": "it",
+      "multilingual": false
+    },
+    {
+      "id": "1ebfec36",
+      "name": "Marco",
+      "gender": "male",
+      "language": "Italian",
+      "base_language": "it",
+      "multilingual": false
+    },
+    {
+      "id": "d74461c6",
+      "name": "Hyun-woo",
+      "gender": "male",
+      "language": "Korean",
+      "base_language": "ko",
+      "multilingual": false
+    },
+    {
+      "id": "ce19f825",
+      "name": "Magdalena",
+      "gender": "female",
+      "language": "Polish (Poland)",
+      "base_language": "pl",
+      "multilingual": false
+    },
+    {
+      "id": "70071d42",
+      "name": "Tomasz",
+      "gender": "male",
+      "language": "Polish (Poland)",
+      "base_language": "pl",
+      "multilingual": false
+    },
+    {
+      "id": "4984accb",
+      "name": "Zofia",
+      "gender": "female",
+      "language": "Polish (Poland)",
+      "base_language": "pl",
+      "multilingual": false
+    },
+    {
+      "id": "2902bcfd",
+      "name": "Piotr",
+      "gender": "male",
+      "language": "Polish (Poland)",
+      "base_language": "pl",
+      "multilingual": false
+    },
+    {
+      "id": "a0fa45a6",
+      "name": "Pedro",
+      "gender": "male",
+      "language": "Portuguese",
+      "base_language": "pt",
+      "multilingual": false
+    },
+    {
+      "id": "777d3f85",
+      "name": "Catarina",
+      "gender": "female",
+      "language": "Portuguese",
+      "base_language": "pt",
+      "multilingual": false
+    },
+    {
+      "id": "a24f5341",
+      "name": "Mikhail",
+      "gender": "male",
+      "language": "Russian",
+      "base_language": "ru",
+      "multilingual": false
+    },
+    {
+      "id": "0d3372eb",
+      "name": "Sergei",
+      "gender": "male",
+      "language": "Russian",
+      "base_language": "ru",
+      "multilingual": false
+    },
+    {
+      "id": "0b875ae2",
+      "name": "Sonia",
+      "gender": "female",
+      "language": "Russian",
+      "base_language": "ru",
+      "multilingual": false
+    },
+    {
+      "id": "f2f41225",
+      "name": "Maria",
+      "gender": "female",
+      "language": "Spanish",
+      "base_language": "es",
+      "multilingual": false
+    },
+    {
+      "id": "d2313a0d",
+      "name": "Pablo",
+      "gender": "male",
+      "language": "Spanish",
+      "base_language": "es",
+      "multilingual": false
+    },
+    {
+      "id": "46a802e3",
+      "name": "Lucia",
+      "gender": "female",
+      "language": "Spanish",
+      "base_language": "es",
+      "multilingual": false
+    },
+    {
+      "id": "1a59f327",
+      "name": "Carlos",
+      "gender": "male",
+      "language": "Spanish",
+      "base_language": "es",
+      "multilingual": false
+    },
+    {
+      "id": "bab9c92f",
+      "name": "Elsa",
+      "gender": "female",
+      "language": "Swedish (Sweden)",
+      "base_language": "sv",
+      "multilingual": false
+    },
+    {
+      "id": "93bea908",
+      "name": "William",
+      "gender": "male",
+      "language": "Swedish (Sweden)",
+      "base_language": "sv",
+      "multilingual": false
+    },
+    {
+      "id": "4c7f16ff",
+      "name": "Oscar",
+      "gender": "male",
+      "language": "Swedish (Sweden)",
+      "base_language": "sv",
+      "multilingual": false
+    },
+    {
+      "id": "3b312632",
+      "name": "Alice",
+      "gender": "female",
+      "language": "Swedish (Sweden)",
+      "base_language": "sv",
+      "multilingual": false
+    },
+    {
+      "id": "a5341c30",
+      "name": "Nicha",
+      "gender": "female",
+      "language": "Thai (Thailand)",
+      "base_language": "th",
+      "multilingual": false
+    },
+    {
+      "id": "4b7af2d7",
+      "name": "Somchai",
+      "gender": "male",
+      "language": "Thai (Thailand)",
+      "base_language": "th",
+      "multilingual": false
+    },
+    {
+      "id": "330f1e6d",
+      "name": "Pim",
+      "gender": "female",
+      "language": "Thai (Thailand)",
+      "base_language": "th",
+      "multilingual": false
+    },
+    {
+      "id": "0463086e",
+      "name": "Thanawat",
+      "gender": "male",
+      "language": "Thai (Thailand)",
+      "base_language": "th",
+      "multilingual": false
+    },
+    {
+      "id": "f331ee80",
+      "name": "Ahmet",
+      "gender": "male",
+      "language": "Turkish",
+      "base_language": "tr",
+      "multilingual": false
+    },
+    {
+      "id": "e5da67a7",
+      "name": "Linh",
+      "gender": "female",
+      "language": "Vietnamese",
+      "base_language": "vi",
+      "multilingual": false
+    },
+    {
+      "id": "4e1d5545",
+      "name": "Quang",
+      "gender": "male",
+      "language": "Vietnamese",
+      "base_language": "vi",
+      "multilingual": false
+    },
+    {
+      "id": "39e46ca3",
+      "name": "Hoang",
+      "gender": "male",
+      "language": "Vietnamese",
+      "base_language": "vi",
+      "multilingual": false
+    }
+  ]
+}

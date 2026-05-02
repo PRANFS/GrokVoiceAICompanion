@@ -13,10 +13,10 @@ AI Companion powered by xAI's Grok Voice Agent API with customizable Live2D avat
 - **Natural Animations** - Eye blinks, breathing, head movements & lip sync (WIP)
 - **Dynamic Backgrounds** - AI-generated backgrounds that change based on conversation topics
 - **Vision Capabilities** - AI Companion can see your webcam when you ask it to, and respond to visual cues
-- **Multi-Language Support** - Supports English, Japanese, Korean, Chinese, Spanish, French, and German
+- **Multi-Language Support** - Supports 24 languages including Japanese, Korean, Chinese, Spanish, French, German, Arabic, Hindi, and more
 - **STT/TTS Mode (English-only)** - Moonshine English Medium Streaming STT -> Grok 4.1 Fast Non-Reasoning -> Grok Streaming TTS
 - **Customizable Models** - Load your own Live2D models
-- **Voice Selection** - Choose from multiple AI voices (ara, rex, sal, eve, leo)
+- **Voice Selection** - Choose from 89 AI voices created by xAI, across 28 languages, including 5 multilingual voices
 - **Personality Customization** - Modify AI personality and behavior via API
 - **Live Transcripts** - See what you and the AI are saying in real-time
 - **Translation Support** - Automatic translation for multi-language conversations
@@ -29,6 +29,7 @@ GrokVoiceAICompanion/
 │   └── main.py              # FastAPI server with WebSocket proxy
 ├── static/
 │   ├── index.html           # Main HTML page
+│   ├── voices.json          # Voice registry (89 voices, 24 languages)
 │   ├── css/
 │   │   └── style.css        # Styles
 │   ├── js/
@@ -111,14 +112,14 @@ Click the microphone button 🎙️ to start talking!
 2. **Talk** - Speak naturally, the AI will respond with voice
 3. **Watch the avatar** - Lips sync to the AI's speech
 4. **Load custom model** - Click "Load Custom" to browse for your own Live2D models
-5. **Change voice & edits personality** - Use the dropdowns to select different voices and modify personality traits
+5. **Change voice & edit personality** - Click "Edit Personality" to choose a language, filter voices by gender, select from 89 voices, and customize the AI's personality
 6. **Toggle dynamic background** - Click the dynamic background toggle to turn on/off AI-generated backgrounds that change based on conversation topics
 
 ### Voice Pipeline Modes
 
 - **Grok Voice Agent (default)**:
-   - Existing realtime mode.
-   - Uses voice-agent API path and language dropdown.
+   - Realtime voice-to-voice mode.
+   - Language and voice configured via the Edit Personality modal.
 
 - **STT/TTS Mode (English-only)**:
    - Uses Moonshine English Medium Streaming STT locally.

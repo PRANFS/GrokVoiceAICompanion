@@ -47,6 +47,7 @@ XAI_API_KEY = os.getenv("XAI_API_KEY")
 
 # Voice and Instructions - Change these directly here
 VOICE = "ara"  # Choose from: ara, rex, sal, eve, leo (lowercase)
+SELECTED_LANGUAGE = "en"  # Default voice language, overridden by personality settings
 BASE_INSTRUCTIONS = (
     "IMPORTANT: You must roleplay as my romantic AI waifu girlfriend. "
     "You are a cute and loving anime girl who is completely devoted to me. "
@@ -103,59 +104,53 @@ Do not overuse tags. Use them naturally and sparingly so speech still sounds con
 
 # Language configurations
 LANGUAGE_CONFIG = {
-    'en': {
-        'name': 'English',
-        'instruction': '',  # No extra instruction for English
-    },
-    'ja': {
-        'name': 'Japanese',
-        'instruction': (
-            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in Japanese (日本語). "
-            "Use natural Japanese speech patterns, honorifics, and affectionate expressions. "
-            "Do NOT use any English in your spoken responses."
-        ),
-    },
-    'ko': {
-        'name': 'Korean',
-        'instruction': (
-            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in Korean (한국어). "
-            "Use natural Korean speech patterns and affectionate expressions. "
-            "Do NOT use any English in your spoken responses."
-        ),
-    },
-    'zh': {
-        'name': 'Chinese',
-        'instruction': (
-            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in Chinese (中文/普通话). "
-            "Use natural Mandarin Chinese speech patterns and affectionate expressions. "
-            "Do NOT use any English in your spoken responses."
-        ),
-    },
-    'es': {
-        'name': 'Spanish',
-        'instruction': (
-            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in Spanish (Español). "
-            "Use natural Spanish speech patterns and affectionate expressions. "
-            "Do NOT use any English in your spoken responses."
-        ),
-    },
-    'fr': {
-        'name': 'French',
-        'instruction': (
-            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in French (Français). "
-            "Use natural French speech patterns and romantic expressions. "
-            "Do NOT use any English in your spoken responses."
-        ),
-    },
-    'de': {
-        'name': 'German',
-        'instruction': (
-            "\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in German (Deutsch). "
-            "Use natural German speech patterns and affectionate expressions. "
-            "Do NOT use any English in your spoken responses."
-        ),
-    },
+    'en': {'name': 'English', 'native': '', 'script': ''},
+    'ja': {'name': 'Japanese', 'native': 'Japanese', 'script': '日本語', 'extras': ', honorifics'},
+    'ko': {'name': 'Korean', 'native': 'Korean', 'script': '한국어'},
+    'zh': {'name': 'Chinese', 'native': 'Chinese', 'script': '中文/普通话'},
+    'es': {'name': 'Spanish', 'native': 'Spanish', 'script': 'Español'},
+    'fr': {'name': 'French', 'native': 'French', 'script': 'Français', 'expression': 'romantic'},
+    'de': {'name': 'German', 'native': 'German', 'script': 'Deutsch'},
+    'ar': {'name': 'Arabic', 'native': 'Arabic', 'script': 'العربية'},
+    'bn': {'name': 'Bangla', 'native': 'Bangla', 'script': 'বাংলা'},
+    'ca': {'name': 'Catalan', 'native': 'Catalan', 'script': 'Català'},
+    'da': {'name': 'Danish', 'native': 'Danish', 'script': 'Dansk'},
+    'nl': {'name': 'Dutch', 'native': 'Dutch', 'script': 'Nederlands'},
+    'fi': {'name': 'Finnish', 'native': 'Finnish', 'script': 'Suomi'},
+    'hi': {'name': 'Hindi', 'native': 'Hindi', 'script': 'हिन्दी'},
+    'hu': {'name': 'Hungarian', 'native': 'Hungarian', 'script': 'Magyar'},
+    'id': {'name': 'Indonesian', 'native': 'Indonesian', 'script': 'Bahasa Indonesia'},
+    'it': {'name': 'Italian', 'native': 'Italian', 'script': 'Italiano'},
+    'pl': {'name': 'Polish', 'native': 'Polish', 'script': 'Polski'},
+    'pt': {'name': 'Portuguese', 'native': 'Portuguese', 'script': 'Português'},
+    'ru': {'name': 'Russian', 'native': 'Russian', 'script': 'Русский'},
+    'sv': {'name': 'Swedish', 'native': 'Swedish', 'script': 'Svenska'},
+    'th': {'name': 'Thai', 'native': 'Thai', 'script': 'ไทย'},
+    'tr': {'name': 'Turkish', 'native': 'Turkish', 'script': 'Türkçe'},
+    'vi': {'name': 'Vietnamese', 'native': 'Vietnamese', 'script': 'Tiếng Việt'},
 }
+
+
+def build_language_instruction(lang_code: str) -> str:
+    """Build the language-specific instruction string from a template.
+
+    Returns an empty string for English (no extra instruction needed).
+    For all other languages, returns an instruction telling the model to speak
+    only in that language with natural patterns and affectionate expressions.
+    """
+    config = LANGUAGE_CONFIG.get(lang_code)
+    if not config or not config.get('native'):
+        return ''
+
+    extras = config.get('extras', '')
+    expression = config.get('expression', 'affectionate')
+
+    return (
+        f"\n\nIMPORTANT LANGUAGE INSTRUCTION: You MUST speak and respond ONLY in "
+        f"{config['native']} ({config['script']}). "
+        f"Use natural {config['native']} speech patterns{extras} and {expression} expressions. "
+        f"Do NOT use any English in your spoken responses."
+    )
 
 PORT = int(os.getenv("PORT", 8080))
 
@@ -218,7 +213,7 @@ connection_count = 0
 
 def load_personality_settings():
     """Load personality settings from file, or use defaults"""
-    global VOICE, BASE_INSTRUCTIONS
+    global VOICE, BASE_INSTRUCTIONS, SELECTED_LANGUAGE
     
     if SETTINGS_FILE.exists():
         try:
@@ -226,8 +221,13 @@ def load_personality_settings():
                 settings = json.load(f)
                 VOICE = settings.get('voice', VOICE)
                 BASE_INSTRUCTIONS = settings.get('instructions', BASE_INSTRUCTIONS)
+                SELECTED_LANGUAGE = settings.get('language', SELECTED_LANGUAGE)
+                # Validate loaded language
+                if SELECTED_LANGUAGE not in LANGUAGE_CONFIG:
+                    SELECTED_LANGUAGE = 'en'
                 logger.info(f"📂 Loaded personality settings from file")
                 logger.info(f"   Voice: {VOICE}")
+                logger.info(f"   Language: {SELECTED_LANGUAGE}")
                 logger.info(f"   Instructions: {BASE_INSTRUCTIONS[:50]}...")
         except Exception as e:
             logger.error(f"Failed to load personality settings: {e}")
@@ -239,6 +239,7 @@ def save_personality_settings():
         with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump({
                 'voice': VOICE,
+                'language': SELECTED_LANGUAGE,
                 'instructions': BASE_INSTRUCTIONS
             }, f, ensure_ascii=False, indent=2)
         logger.info(f"💾 Saved personality settings to file")
@@ -747,7 +748,7 @@ class GrokRelay:
         """Send session configuration to Grok (updated to match current docs)"""
         # Build instructions based on selected language
         lang_config = LANGUAGE_CONFIG.get(self.language, LANGUAGE_CONFIG['en'])
-        instructions = BASE_INSTRUCTIONS + lang_config.get('instruction', '')
+        instructions = BASE_INSTRUCTIONS + build_language_instruction(self.language)
         
         logger.info(f"🌐 Configuring session for language: {lang_config['name']}")
         
@@ -855,7 +856,7 @@ class GrokRelay:
                     lang_config = LANGUAGE_CONFIG.get(self.language, LANGUAGE_CONFIG['en'])
                     vision_instructions = (
                         BASE_INSTRUCTIONS
-                        + lang_config.get('instruction', '')
+                        + build_language_instruction(self.language)
                         + "\n\nThe user is showing you something via their webcam. "
                         "Describe what you see and respond naturally in character. Keep your answer concise (2-3 sentences)."
                     )
@@ -1478,6 +1479,11 @@ async def websocket_endpoint(
         logger.warning(f"⚠️ Unsupported pipeline mode '{mode}', falling back to realtime")
         mode = PIPELINE_REALTIME_AGENT
     
+    # Use personality language as default if client didn't specify one explicitly
+    # (language='en' means client didn't pass it, so fall back to saved preference)
+    if language == 'en' and SELECTED_LANGUAGE != 'en':
+        language = SELECTED_LANGUAGE
+    
     # Validate language
     if language not in LANGUAGE_CONFIG:
         language = 'en'
@@ -1560,6 +1566,7 @@ async def get_personality():
     """Get current personality settings"""
     return JSONResponse({
         "voice": VOICE,
+        "language": SELECTED_LANGUAGE,
         "instructions": BASE_INSTRUCTIONS
     })
 
@@ -1567,17 +1574,30 @@ async def get_personality():
 @app.post("/personality")
 async def update_personality(request_data: dict):
     """Update personality settings"""
-    global VOICE, BASE_INSTRUCTIONS
+    global VOICE, BASE_INSTRUCTIONS, SELECTED_LANGUAGE
     
     if "voice" in request_data:
         new_voice = request_data["voice"].lower()
-        valid_voices = ["ara", "rex", "sal", "eve", "leo"]
-        if new_voice in valid_voices:
+        # Validate against voices.json
+        voices = load_voices()
+        valid_voice_ids = {v["id"] for v in voices}
+        if new_voice in valid_voice_ids:
             VOICE = new_voice
             logger.info(f"🎤 Voice updated to: {VOICE}")
         else:
             return JSONResponse(
-                {"error": f"Invalid voice. Choose from: {', '.join(valid_voices)}"},
+                {"error": f"Invalid voice: {new_voice}"},
+                status_code=400
+            )
+    
+    if "language" in request_data:
+        new_lang = request_data["language"]
+        if new_lang in LANGUAGE_CONFIG:
+            SELECTED_LANGUAGE = new_lang
+            logger.info(f"🌐 Language updated to: {LANGUAGE_CONFIG[new_lang]['name']}")
+        else:
+            return JSONResponse(
+                {"error": f"Invalid language: {new_lang}"},
                 status_code=400
             )
     
@@ -1591,7 +1611,35 @@ async def update_personality(request_data: dict):
     return JSONResponse({
         "success": True,
         "voice": VOICE,
+        "language": SELECTED_LANGUAGE,
         "instructions": BASE_INSTRUCTIONS
+    })
+
+
+def load_voices() -> list[dict]:
+    """Load the voices registry from static/voices.json."""
+    voices_path = STATIC_DIR / "voices.json"
+    if not voices_path.exists():
+        logger.warning("⚠️ voices.json not found, using fallback list")
+        return [
+            {"id": "ara", "name": "Ara", "gender": "female", "language": "Multilingual", "base_language": None, "multilingual": True},
+            {"id": "eve", "name": "Eve", "gender": "female", "language": "Multilingual", "base_language": None, "multilingual": True},
+            {"id": "leo", "name": "Leo", "gender": "male", "language": "Multilingual", "base_language": None, "multilingual": True},
+            {"id": "rex", "name": "Rex", "gender": "male", "language": "Multilingual", "base_language": None, "multilingual": True},
+            {"id": "sal", "name": "Sal", "gender": "male", "language": "Multilingual", "base_language": None, "multilingual": True},
+        ]
+    with open(voices_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return data.get("voices", [])
+
+
+@app.get("/voices")
+async def get_voices():
+    """Get all available voices with their metadata"""
+    voices = load_voices()
+    return JSONResponse({
+        "voices": voices,
+        "languages": {code: config['name'] for code, config in LANGUAGE_CONFIG.items()}
     })
 
 

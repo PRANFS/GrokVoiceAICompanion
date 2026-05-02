@@ -21,8 +21,6 @@ const micButton = document.getElementById('mic-button');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const modelDropdown = document.getElementById('model-dropdown');
-const languageDropdown = document.getElementById('language-dropdown');
-const languageSelectorGroup = document.getElementById('language-selector-group');
 const loadCustomBtn = document.getElementById('load-custom-btn');
 const customModelInput = document.getElementById('custom-model-input');
 const transcriptPanel = document.getElementById('transcript-panel');
@@ -41,27 +39,28 @@ const pipelineModeDescription = document.getElementById('pipeline-mode-descripti
 const personalityBtn = document.getElementById('personality-btn');
 const personalityModal = document.getElementById('personality-modal');
 const closeModalBtn = document.getElementById('close-modal-btn');
+const personalityLanguageSelect = document.getElementById('personality-language-select');
+const voiceGenderFilter = document.getElementById('voice-gender-filter');
 const voiceSelect = document.getElementById('voice-select');
 const instructionsTextarea = document.getElementById('instructions-textarea');
 const cancelPersonalityBtn = document.getElementById('cancel-personality-btn');
 const savePersonalityBtn = document.getElementById('save-personality-btn');
 
-// Language display names
-const languageNames = {
-    'en': 'English',
-    'ja': 'Japanese',
-    'ko': 'Korean',
-    'zh': 'Chinese',
-    'es': 'Spanish',
-    'fr': 'French',
-    'de': 'German'
-};
+// Voice cache & gender filter state
+let allVoices = [];
+let currentGenderFilter = 'all';
+
+// Language display names — populated dynamically from /config or /voices
+let languageNames = {};
 
 /**
  * Initialize the application
  */
 async function init() {
     console.log('🚀 Initializing Grok Voice AI Companion...');
+
+    // Load personality (language) and voice list early so selectedLanguage is correct
+    await loadPersonalityAndVoices();
 
     applyPipelineModeUI();
 
@@ -190,23 +189,6 @@ function setupEventListeners() {
         avatar.loadModel(modelDropdown.value);
     });
     
-    // Language dropdown
-    languageDropdown.addEventListener('change', () => {
-        if (currentPipelineMode === PIPELINE_LOCAL_STT_TTS) {
-            languageDropdown.value = 'en';
-            selectedLanguage = 'en';
-            return;
-        }
-
-        selectedLanguage = languageDropdown.value;
-        console.log(`🌐 Language changed to: ${languageNames[selectedLanguage]}`);
-        
-        // If session is active, notify about the language change
-        if (isSessionActive && wsClient) {
-            wsClient.sendLanguageChange(selectedLanguage);
-        }
-    });
-    
     // Custom model button
     loadCustomBtn.addEventListener('click', () => {
         customModelInput.click();
@@ -244,6 +226,25 @@ function setupEventListeners() {
     closeModalBtn.addEventListener('click', closePersonalityModal);
     cancelPersonalityBtn.addEventListener('click', closePersonalityModal);
     savePersonalityBtn.addEventListener('click', savePersonality);
+
+    // Gender filter buttons
+    if (voiceGenderFilter) {
+        voiceGenderFilter.querySelectorAll('.gender-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                voiceGenderFilter.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentGenderFilter = btn.dataset.gender;
+                populateVoiceSelect();
+            });
+        });
+    }
+
+    // Personality language change → re-filter voices
+    if (personalityLanguageSelect) {
+        personalityLanguageSelect.addEventListener('change', () => {
+            populateVoiceSelect();
+        });
+    }
     
     // Dynamic background toggle
     if (dynamicBgToggle) {
@@ -273,13 +274,8 @@ function applyPipelineModeUI() {
     modeRealtimeBtn?.classList.toggle('active', !isLocalMode);
     modeLocalBtn?.classList.toggle('active', isLocalMode);
 
-    if (languageSelectorGroup) {
-        languageSelectorGroup.classList.toggle('hidden', isLocalMode);
-    }
-
     if (isLocalMode) {
         selectedLanguage = 'en';
-        languageDropdown.value = 'en';
         micButton.classList.add('hidden');
         micButton.disabled = true;
         if (pipelineModeDescription) {
@@ -373,10 +369,8 @@ async function startConversation({ autoStarted = false } = {}) {
         // Local mode is currently English-only.
         if (currentPipelineMode === PIPELINE_LOCAL_STT_TTS) {
             selectedLanguage = 'en';
-            languageDropdown.value = 'en';
-        } else {
-            selectedLanguage = languageDropdown.value;
         }
+        // selectedLanguage is already set from personality on init
 
         await wsClient.connect(selectedLanguage, currentPipelineMode);
 
@@ -609,18 +603,157 @@ function showError(message) {
 }
 
 /**
+ * Load personality settings and voices on startup.
+ */
+async function loadPersonalityAndVoices() {
+    try {
+        // Fetch personality + voices in parallel
+        const [personalityRes, voicesRes] = await Promise.all([
+            fetch('/personality'),
+            fetch('/voices')
+        ]);
+
+        if (personalityRes.ok) {
+            const pData = await personalityRes.json();
+            selectedLanguage = pData.language || 'en';
+            console.log(`🌐 Loaded personality language: ${selectedLanguage}`);
+        }
+
+        if (voicesRes.ok) {
+            const vData = await voicesRes.json();
+            allVoices = vData.voices || [];
+            if (vData.languages) {
+                languageNames = vData.languages;
+            }
+            console.log(`🎤 Loaded ${allVoices.length} voices, ${Object.keys(languageNames).length} languages`);
+        }
+    } catch (error) {
+        console.error('Failed to load personality/voices:', error);
+        // Fallback: keep defaults
+    }
+}
+
+/**
+ * Populate the voice <select> based on selected language + gender filter.
+ */
+function populateVoiceSelect() {
+    if (!voiceSelect || !personalityLanguageSelect) return;
+
+    const selectedLang = personalityLanguageSelect.value;
+    const isEnglish = selectedLang === 'en';
+
+    // Filter voices
+    let filtered = allVoices.filter(v => {
+        // Multilingual voices always appear for any language
+        if (v.multilingual) return true;
+        // English language shows both multilingual + English-specific voices
+        if (isEnglish && v.base_language === 'en') return true;
+        // Other languages: show voices matching that base_language
+        if (!isEnglish && v.base_language === selectedLang) return true;
+        return false;
+    });
+
+    // Apply gender filter
+    if (currentGenderFilter === 'male') {
+        filtered = filtered.filter(v => v.gender === 'male');
+    } else if (currentGenderFilter === 'female') {
+        filtered = filtered.filter(v => v.gender === 'female');
+    }
+
+    // Populate dropdown
+    voiceSelect.innerHTML = '';
+    if (filtered.length === 0) {
+        voiceSelect.innerHTML = '<option value="">-- No voices match --</option>';
+        return;
+    }
+
+    filtered.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = `${v.name} (${v.gender === 'male' ? '♂' : '♀'} ${v.language})`;
+        voiceSelect.appendChild(opt);
+    });
+}
+
+/**
+ * Populate the language <select> in the personality modal.
+ */
+function populateLanguageSelect() {
+    if (!personalityLanguageSelect) return;
+
+    personalityLanguageSelect.innerHTML = '';
+    const langEntries = Object.entries(languageNames);
+    if (langEntries.length === 0) {
+        // Fallback
+        const fallback = { en: 'English', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', es: 'Spanish', fr: 'French', de: 'German' };
+        Object.entries(fallback).forEach(([code, name]) => {
+            const opt = document.createElement('option');
+            opt.value = code;
+            opt.textContent = name;
+            personalityLanguageSelect.appendChild(opt);
+        });
+    } else {
+        langEntries.forEach(([code, name]) => {
+            const opt = document.createElement('option');
+            opt.value = code;
+            opt.textContent = name;
+            personalityLanguageSelect.appendChild(opt);
+        });
+    }
+}
+
+/**
  * Open personality modal and load current settings
  */
 async function openPersonalityModal() {
     try {
+        // If voices not loaded yet, fetch now
+        if (allVoices.length === 0) {
+            const vRes = await fetch('/voices');
+            if (vRes.ok) {
+                const vData = await vRes.json();
+                allVoices = vData.voices || [];
+                if (vData.languages) languageNames = vData.languages;
+            }
+        }
+
+        populateLanguageSelect();
+
+        // Lock language for STT/TTS mode
+        const isLocalMode = currentPipelineMode === PIPELINE_LOCAL_STT_TTS;
+        if (personalityLanguageSelect) {
+            personalityLanguageSelect.disabled = isLocalMode;
+            if (isLocalMode) {
+                personalityLanguageSelect.value = 'en';
+            } else {
+                personalityLanguageSelect.value = selectedLanguage;
+            }
+        }
+
+        // Reset gender filter
+        currentGenderFilter = 'all';
+        if (voiceGenderFilter) {
+            voiceGenderFilter.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('active'));
+            const allBtn = voiceGenderFilter.querySelector('[data-gender="all"]');
+            if (allBtn) allBtn.classList.add('active');
+        }
+
         // Fetch current personality settings
         const response = await fetch('/personality');
         const data = await response.json();
-        
-        // Populate the form
-        voiceSelect.value = data.voice.toLowerCase();
+
+        // Populate voice dropdown based on current language + gender
+        populateVoiceSelect();
+
+        // Select the current voice (or first available)
+        if (data.voice && allVoices.some(v => v.id === data.voice.toLowerCase())) {
+            voiceSelect.value = data.voice.toLowerCase();
+        } else if (voiceSelect.options.length > 0) {
+            voiceSelect.selectedIndex = 0;
+        }
+
         instructionsTextarea.value = data.instructions;
-        
+
         // Show modal
         personalityModal.classList.remove('hidden');
     } catch (error) {
@@ -641,16 +774,22 @@ function closePersonalityModal() {
  */
 async function savePersonality() {
     const voice = voiceSelect.value;
+    const language = personalityLanguageSelect?.value || 'en';
     const instructions = instructionsTextarea.value.trim();
-    
+
+    if (!voice) {
+        showError('Please select a voice');
+        return;
+    }
+
     if (!instructions) {
         showError('Instructions cannot be empty');
         return;
     }
-    
+
     savePersonalityBtn.disabled = true;
     savePersonalityBtn.textContent = 'Saving...';
-    
+
     try {
         const response = await fetch('/personality', {
             method: 'POST',
@@ -659,16 +798,19 @@ async function savePersonality() {
             },
             body: JSON.stringify({
                 voice: voice,
+                language: language,
                 instructions: instructions
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             console.log('✅ Personality saved:', data);
+            // Update selectedLanguage so next conversation uses it
+            selectedLanguage = language;
             closePersonalityModal();
-            
+
             // Show success message
             const toast = document.getElementById('error-toast');
             toast.textContent = '✅ Personality saved! Restart conversation to apply.';

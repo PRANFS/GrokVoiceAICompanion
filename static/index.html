@@ -48,19 +48,6 @@
             </select>
             <button id="load-custom-btn" class="secondary-btn">📁 Load Custom</button>
             <input type="file" id="custom-model-input" accept=".model3.json" style="display: none;">
-
-            <div id="language-selector-group">
-                <label>Voice Language</label>
-                <select id="language-dropdown">
-                    <option value="en">🇬🇧 English</option>
-                    <option value="ja">🇯🇵 Japanese (日本語)</option>
-                    <option value="ko">🇰🇷 Korean (한국어)</option>
-                    <option value="zh">🇨🇳 Chinese (中文)</option>
-                    <option value="es">🇪🇸 Spanish (Español)</option>
-                    <option value="fr">🇫🇷 French (Français)</option>
-                    <option value="de">🇩🇪 German (Deutsch)</option>
-                </select>
-            </div>
             
             <button id="personality-btn" class="secondary-btn">🎭 Edit Personality</button>
             
@@ -79,17 +66,23 @@
                     <button id="close-modal-btn" class="close-btn">&times;</button>
                 </div>
                 <div class="modal-body">
+                    <label for="personality-language-select">Voice Language</label>
+                    <select id="personality-language-select">
+                    </select>
+
+                    <label>Voice Gender Filter</label>
+                    <div id="voice-gender-filter" class="gender-filter" role="radiogroup">
+                        <button type="button" class="gender-btn active" data-gender="all">All</button>
+                        <button type="button" class="gender-btn" data-gender="female">♀ Female</button>
+                        <button type="button" class="gender-btn" data-gender="male">♂ Male</button>
+                    </div>
+
                     <label for="voice-select">Voice</label>
                     <select id="voice-select">
-                        <option value="ara">Ara</option>
-                        <option value="rex">Rex</option>
-                        <option value="sal">Sal</option>
-                        <option value="eve">Eve</option>
-                        <option value="leo">Leo</option>
                     </select>
                     
                     <label for="instructions-textarea">Base Instructions</label>
-                    <textarea id="instructions-textarea" rows="10" placeholder="Enter the personality instructions..."></textarea>
+                    <textarea id="instructions-textarea" rows="8" placeholder="Enter the personality instructions..."></textarea>
                 </div>
                 <div class="modal-footer">
                     <button id="cancel-personality-btn" class="secondary-btn">Cancel</button>
