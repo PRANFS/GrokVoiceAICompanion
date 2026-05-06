@@ -14,7 +14,7 @@ AI Companion powered by xAI's Grok Voice Agent API with customizable Live2D avat
 - **Dynamic Backgrounds** - AI-generated backgrounds that change based on conversation topics
 - **Vision Capabilities** - AI Companion can see your webcam when you ask it to, and respond to visual cues
 - **Multi-Language Support** - Supports 24 languages including Japanese, Korean, Chinese, Spanish, French, German, Arabic, Hindi, and more
-- **STT/TTS Mode (English-only)** - Moonshine English Medium Streaming STT -> Grok 4.1 Fast Non-Reasoning -> Grok Streaming TTS
+- **STT/TTS Mode (English-only)** - Moonshine English Medium Streaming STT -> Grok 4.20 Non-Reasoning -> Grok Streaming TTS
 - **Customizable Models** - Load your own Live2D models
 - **Voice Selection** - Choose from 89 AI voices created by xAI, across 28 languages, including 5 multilingual voices
 - **Personality Customization** - Modify AI personality and behavior via API
@@ -77,11 +77,11 @@ pip install -r requirements.txt
 
 > **Note:** API Pricing is **$0.05 per minute connected** for Grok Voice Agent and **$0.02 per image generated** for Grok Imagine.  
 > 
-> **STT/TTS Mode (English-only)** – Moonshine English Medium Streaming STT (free) → Grok 4.1 Fast Non-Reasoning → Grok Streaming TTS  
+> **STT/TTS Mode (English-only)** – Moonshine English Medium Streaming STT (free) → Grok 4.20 Non-Reasoning → Grok Streaming TTS  
 > This cheaper alternative pipeline typically costs **$0.005 – $0.015 per minute** of conversation (often 5–10x cheaper than the full Voice Agent).  
 > Breakdown:  
 > - Moonshine STT: **$0** (open-source)  
-> - Grok 4.1 Fast Non-Reasoning: **$0.20 / M input tokens** + **$0.50 / M output tokens**  
+> - Grok 4.20 Non-Reasoning: **$1.25 / M input tokens** + **$2.50 / M output tokens**  
 > - Grok TTS: **$4.20 / M characters** (charged only for generated output)
 Create a `.env` file in the project root:
 
@@ -123,7 +123,7 @@ Click the microphone button 🎙️ to start talking!
 
 - **STT/TTS Mode (English-only)**:
    - Uses Moonshine English Medium Streaming STT locally.
-   - Sends transcript text to `grok-4-1-fast-non-reasoning`.
+   - Sends transcript text to `grok-4.20-non-reasoning`.
    - Speaks reply through Grok Streaming TTS.
    - Starts listening automatically (no dedicated on/off button).
 
