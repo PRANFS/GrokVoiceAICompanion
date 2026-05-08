@@ -383,7 +383,8 @@ async def analyze_topic_change(connection_id: int, transcript: str) -> tuple[boo
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "grok-4.20-non-reasoning",
+                    "model": "grok-4.3",
+                    "reasoning_effort": "none",
                     "messages": [
                         {
                             "role": "system",
@@ -487,7 +488,7 @@ High quality, detailed, vibrant colors, cinematic lighting."""
 
 async def analyze_vision_query(image_base64: str, query: str, instructions: str = "") -> str:
     """
-    Send an image + text query to grok-4.20-non-reasoning via /v1/chat/completions.
+    Send an image + text query to grok-4.3 via /v1/chat/completions.
     Returns the text response.
     """
     try:
@@ -519,7 +520,8 @@ async def analyze_vision_query(image_base64: str, query: str, instructions: str 
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "grok-4.20-non-reasoning",
+                    "model": "grok-4.3",
+                    "reasoning_effort": "none",
                     "messages": messages,
                     "temperature": 0.7
                 }
@@ -1350,7 +1352,8 @@ class LocalPipelineRelay:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "grok-4.20-non-reasoning",
+                    "model": "grok-4.3",
+                    "reasoning_effort": "none",
                     "messages": messages,
                     "temperature": 0.7,
                 },
